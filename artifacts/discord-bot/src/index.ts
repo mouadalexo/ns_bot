@@ -59,7 +59,9 @@ if (!token) {
       activities: [{ name: "Night Stars", type: ActivityType.Watching }],
       status: "online",
     });
-    await registerPanelCommands(client);
+    registerPanelCommands(client).catch((err) => {
+      console.error("[Bot] Error registering commands:", err);
+    });
   });
 
   client.on("error", (err) => {
