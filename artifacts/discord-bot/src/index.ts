@@ -19,11 +19,12 @@ createServer((_, res) => {
   console.log(`Health check server listening on port ${port}`);
 });
 
-const token = process.env.DISCORD_TOKEN;
+const token = process.env.DISCORD_TOKEN?.trim();
 if (!token) {
   console.error("DISCORD_TOKEN environment variable is not set.");
   process.exit(1);
 }
+console.log(`[Bot] Token starts with: ${token.slice(0, 10)}... length: ${token.length}`);
 
 const client = new Client({
   intents: [
