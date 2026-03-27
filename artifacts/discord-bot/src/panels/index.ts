@@ -90,11 +90,11 @@ function buildCtpInfoEmbed() {
     .setDescription("Commands for calling players to your game:")
     .addFields(
       {
-        name: "`-GameName`",
+        name: "`-tag`",
         value:
-          "Ping the game role for that game.\n" +
-          "You must be in a voice channel under the configured game category.\n" +
-          "Example: `-Valorant` or `-CSGO`",
+          "Ping the game role for your current voice channel.\n" +
+          "The bot detects which game you're in automatically based on the category.\n" +
+          "Just join a game voice channel and type `-tag`.",
         inline: false,
       },
       {

@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { botConfigTable, ctpCategoriesTable, ctpCooldownsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 
-const CTP_PREFIX = "-";
+const CTP_COMMAND = "-tag";
 
 function formatSeconds(total: number): string {
   const m = Math.floor(total / 60);
@@ -17,39 +17,12 @@ export function registerCTPModule(client: Client) {
   client.on("messageCreate", async (message: Message) => {
     if (message.author.bot) return;
     if (!message.guild) return;
-    if (!message.content.startsWith(CTP_PREFIX)) return;
-
-    const gameName = message.content.slice(CTP_PREFIX.length).trim();
-    if (!gameName) return;
+    if (message.content.toLowerCase().trim() !== CTP_COMMAND) return;
 
     const member = message.member;
     if (!member) return;
 
     const guildId = message.guild.id;
-
-    const allConfigs = await db
-      .select()
-      .from(ctpCategoriesTable)
-      .where(and(eq(ctpCategoriesTable.guildId, guildId), eq(ctpCategoriesTable.enabled, 1)));
-
-    if (!allConfigs.length) return;
-
-    const config = allConfigs.find(
-      (c) => c.gameName.toLowerCase() === gameName.toLowerCase()
-    );
-
-    if (!config) {
-      const gameList = allConfigs.map((c) => `**${c.gameName}**`).join(", ");
-      const notice = await message.channel.send({
-        embeds: [
-          new EmbedBuilder()
-            .setColor(0xe74c3c)
-            .setDescription(`No game found with that name. Available: ${gameList}`),
-        ],
-      });
-      setTimeout(() => notice.delete().catch(() => {}), 8000);
-      return;
-    }
 
     const voiceChannel = member.voice.channel;
     if (!voiceChannel) {
@@ -57,19 +30,45 @@ export function registerCTPModule(client: Client) {
         embeds: [
           new EmbedBuilder()
             .setColor(0xe74c3c)
-            .setDescription(`You must join a **${config.gameName}** voice channel first.`),
+            .setDescription("You must be in a game voice channel to use this."),
         ],
       });
       setTimeout(() => notice.delete().catch(() => {}), 6000);
       return;
     }
 
-    if (voiceChannel.parentId !== config.categoryId) {
+    const categoryId = voiceChannel.parentId;
+    if (!categoryId) {
       const notice = await message.channel.send({
         embeds: [
           new EmbedBuilder()
             .setColor(0xe74c3c)
-            .setDescription(`You must be in a **${config.gameName}** voice channel to use this tag.`),
+            .setDescription("This voice channel is not under a configured game category."),
+        ],
+      });
+      setTimeout(() => notice.delete().catch(() => {}), 6000);
+      return;
+    }
+
+    const config = await db
+      .select()
+      .from(ctpCategoriesTable)
+      .where(
+        and(
+          eq(ctpCategoriesTable.guildId, guildId),
+          eq(ctpCategoriesTable.categoryId, categoryId),
+          eq(ctpCategoriesTable.enabled, 1)
+        )
+      )
+      .limit(1)
+      .then((r) => r[0] ?? null);
+
+    if (!config) {
+      const notice = await message.channel.send({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0xe74c3c)
+            .setDescription("This voice channel's category is not set up for Call to Play."),
         ],
       });
       setTimeout(() => notice.delete().catch(() => {}), 6000);
