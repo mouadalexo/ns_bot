@@ -42,11 +42,9 @@ async function getQuestions(guildId: string): Promise<string[]> {
 
 export function buildVerificationPanelEmbed(title?: string | null, description?: string | null) {
   const resolvedDesc = description ||
-    "<a:emoji_190:1469099919666188542> Welcome to **Night Stars**!\n\n" +
+    "Welcome to **Night Stars**!\n\n" +
     "Click the button below and answer the questions.\n" +
     "A staff member will review your answers and verify you shortly.";
-
-  console.log(`[NSV buildEmbed] title="${title}" desc="${resolvedDesc.slice(0, 60)}"`);
 
   return new EmbedBuilder()
     .setColor(0xff0000)

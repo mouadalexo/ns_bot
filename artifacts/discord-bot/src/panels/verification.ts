@@ -261,7 +261,11 @@ export async function handleEmbedCustomizeSubmit(interaction: ModalSubmitInterac
   const state = verifyPanelState.get(userId) ?? {};
 
   state.embedTitle = interaction.fields.getTextInputValue("vp_embed_title").trim();
-  state.embedDescription = interaction.fields.getTextInputValue("vp_embed_desc").trim();
+  state.embedDescription = interaction.fields
+    .getTextInputValue("vp_embed_desc")
+    .trim()
+    .replace(/\\</g, "<")
+    .replace(/\\>/g, ">");
 
   verifyPanelState.set(userId, state);
 
