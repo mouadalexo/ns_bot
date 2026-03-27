@@ -117,7 +117,7 @@ export async function registerPanelCommands(client: Client) {
   if (!token) throw new Error("DISCORD_TOKEN is missing");
 
   const setupCommand = new SlashCommandBuilder()
-    .setName("setup")
+    .setName("stp")
     .setDescription("Configure Night Stars bot systems")
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
     .addSubcommand((sub) =>
@@ -170,7 +170,7 @@ export async function registerPanelCommands(client: Client) {
 
     if (interaction.isChatInputCommand()) {
       const name = interaction.commandName;
-      if (name === "setup") {
+      if (name === "stp") {
         await handleSetupCommand(interaction as ChatInputCommandInteraction);
       } else if (name === "pvs") {
         await interaction.reply({ embeds: [buildPvsInfoEmbed()], ephemeral: true });
