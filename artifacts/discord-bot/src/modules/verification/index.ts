@@ -156,7 +156,6 @@ export async function deployVerificationPanel(channel: TextChannel) {
   const config = await getConfig(channel.guild.id);
   const title = config?.panelEmbedTitle ?? null;
   const desc = config?.panelEmbedDescription ?? null;
-  console.log(`[NSV Deploy] title: "${title}" | desc: "${desc?.slice(0, 100)}"`);
   await channel.send({
     embeds: [buildVerificationPanelEmbed(title, desc)],
     components: [buildStartButton()],

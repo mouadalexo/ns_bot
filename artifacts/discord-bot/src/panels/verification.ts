@@ -269,8 +269,6 @@ export async function handleEmbedCustomizeSubmit(interaction: ModalSubmitInterac
 
   verifyPanelState.set(userId, state);
 
-  console.log(`[NSV Embed] Saving — title: "${state.embedTitle}", desc: "${state.embedDescription?.slice(0, 80)}"`);
-
   const guildId = interaction.guild!.id;
   const existing = await db.select().from(botConfigTable).where(eq(botConfigTable.guildId, guildId)).limit(1);
 
