@@ -125,7 +125,7 @@ export function registerCTPModule(client: Client) {
                 `The **${config.gameName}** tag was used recently.\n` +
                 `You can re-tag in **${timeStr}**.`
               )
-              .setFooter({ text: `Cooldown: ${config.cooldownSeconds}s • Night Stars CTP` }),
+              .setFooter({ text: `Cooldown: ${Math.round(config.cooldownSeconds / 60)}min • Night Stars CTP` }),
           ],
         });
         setTimeout(() => notice.delete().catch(() => {}), 8000);
@@ -148,7 +148,7 @@ export function registerCTPModule(client: Client) {
         value: `🔊 ${voiceChannel.name}`,
         inline: true,
       })
-      .setFooter({ text: `Night Stars CTP • Cooldown resets in ${config.cooldownSeconds}s` })
+      .setFooter({ text: `Night Stars CTP • Cooldown: ${Math.round(config.cooldownSeconds / 60)}min` })
       .setTimestamp();
 
     let outputChannel: TextChannel;
@@ -167,7 +167,7 @@ export function registerCTPModule(client: Client) {
       embeds: [
         new EmbedBuilder()
           .setColor(0x2ecc71)
-          .setDescription(`✅ Tag sent! You can re-tag after **${config.cooldownSeconds}s**.`),
+          .setDescription(`✅ Tag sent! You can re-tag after **${Math.round(config.cooldownSeconds / 60)}min**.`),
       ],
     });
     setTimeout(() => confirm.delete().catch(() => {}), 6000);

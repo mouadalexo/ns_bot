@@ -42,11 +42,11 @@ async function getQuestions(guildId: string): Promise<string[]> {
 
 export function buildVerificationPanelEmbed() {
   return new EmbedBuilder()
-    .setColor(0x1a1a2e)
-    .setTitle("⭐ Night Stars — Verification")
+    .setColor(0xff0000)
+    .setTitle("Night Stars — Verification")
     .setDescription(
       "Welcome to **Night Stars**!\n\n" +
-      "To get access to the server, click the button below and answer the questions in the form that appears.\n\n" +
+      "Click the button below and answer the questions.\n" +
       "A staff member will review your answers and verify you shortly."
     )
     .setFooter({ text: "Night Stars • Verification System" })
@@ -58,7 +58,6 @@ function buildStartButton() {
     new ButtonBuilder()
       .setCustomId("verification_start")
       .setLabel("Start Verification")
-      .setEmoji("🚀")
       .setStyle(ButtonStyle.Primary)
   );
 }
@@ -96,16 +95,16 @@ async function buildVerificationModal(guildId: string) {
 
 function buildVerificationLogEmbed(
   memberId: string,
-  memberTag: string,
+  memberUsername: string,
   createdAt: number,
   answers: string[],
   questions: string[]
 ) {
   return new EmbedBuilder()
-    .setColor(0xf1c40f)
-    .setTitle("📋 New Verification Request")
+    .setColor(0xff0000)
+    .setTitle("New Verification Request")
     .addFields(
-      { name: "Member", value: `<@${memberId}> (${memberTag})`, inline: true },
+      { name: "Member", value: `<@${memberId}> (${memberUsername})`, inline: true },
       { name: "ID", value: memberId, inline: true },
       { name: "Account Created", value: `<t:${Math.floor(createdAt / 1000)}:R>`, inline: true },
       { name: "\u200B", value: "**Answers**", inline: false },
@@ -124,25 +123,21 @@ function buildActionButtons(disabled = false) {
     new ButtonBuilder()
       .setCustomId("verify_accept")
       .setLabel("Accept")
-      .setEmoji("✅")
       .setStyle(ButtonStyle.Success)
       .setDisabled(disabled),
     new ButtonBuilder()
       .setCustomId("verify_deny")
       .setLabel("Deny")
-      .setEmoji("❌")
       .setStyle(ButtonStyle.Danger)
       .setDisabled(disabled),
     new ButtonBuilder()
       .setCustomId("verify_jail")
       .setLabel("Jail")
-      .setEmoji("⛓️")
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(disabled),
     new ButtonBuilder()
       .setCustomId("verify_ticket")
       .setLabel("Open Ticket")
-      .setEmoji("🎫")
       .setStyle(ButtonStyle.Primary)
       .setDisabled(disabled)
   );
@@ -200,26 +195,58 @@ async function handleVerificationSubmit(interaction: ModalSubmitInteraction) {
     interaction.fields.getTextInputValue("q5"),
   ];
 
-  await db.insert(verificationSessionsTable).values({
-    guildId,
-    memberId: user.id,
-    channelId: "modal",
-    currentQuestion: 5,
-    answer1: answers[0],
-    answer2: answers[1],
-    answer3: answers[2],
-    answer4: answers[3],
-    answer5: answers[4],
-    status: "submitted",
-  });
+  const existing = await db
+    .select()
+    .from(verificationSessionsTable)
+    .where(
+      and(
+        eq(verificationSessionsTable.guildId, guildId),
+        eq(verificationSessionsTable.memberId, user.id)
+      )
+    )
+    .limit(1);
+
+  if (existing.length) {
+    await db
+      .update(verificationSessionsTable)
+      .set({
+        channelId: "modal",
+        currentQuestion: 5,
+        answer1: answers[0],
+        answer2: answers[1],
+        answer3: answers[2],
+        answer4: answers[3],
+        answer5: answers[4],
+        status: "submitted",
+      })
+      .where(
+        and(
+          eq(verificationSessionsTable.guildId, guildId),
+          eq(verificationSessionsTable.memberId, user.id)
+        )
+      );
+  } else {
+    await db.insert(verificationSessionsTable).values({
+      guildId,
+      memberId: user.id,
+      channelId: "modal",
+      currentQuestion: 5,
+      answer1: answers[0],
+      answer2: answers[1],
+      answer3: answers[2],
+      answer4: answers[3],
+      answer5: answers[4],
+      status: "submitted",
+    });
+  }
 
   await interaction.reply({
     embeds: [
       new EmbedBuilder()
-        .setColor(0x2ecc71)
-        .setTitle("✅ Answers Submitted!")
+        .setColor(0xff0000)
+        .setTitle("Answers Submitted")
         .setDescription(
-          "Your answers have been sent to the staff for review.\nPlease be patient — you will be verified shortly."
+          "Your answers have been sent to the staff for review.\nPlease wait — you will be verified shortly."
         )
         .setFooter({ text: "Night Stars • Verification System" }),
     ],
@@ -235,7 +262,7 @@ async function handleVerificationSubmit(interaction: ModalSubmitInteraction) {
   if (!logsChannel) return;
 
   const questions = await getQuestions(guildId);
-  const logEmbed = buildVerificationLogEmbed(user.id, user.tag, user.createdTimestamp, answers, questions);
+  const logEmbed = buildVerificationLogEmbed(user.id, user.username, user.createdTimestamp, answers, questions);
 
   await logsChannel.send({
     content: config.verificatorsRoleId ? `<@&${config.verificatorsRoleId}>` : undefined,
@@ -270,6 +297,7 @@ async function handleVerificationAction(interaction: ButtonInteraction) {
   const targetMember = await interaction.guild!.members.fetch(memberId).catch(() => null);
   const disabledRow = buildActionButtons(true);
   const { customId } = interaction;
+  const staffName = interaction.user.username;
 
   if (customId === "verify_accept") {
     if (config.verifiedRoleId && targetMember) {
@@ -278,11 +306,21 @@ async function handleVerificationAction(interaction: ButtonInteraction) {
     if (config.unverifiedRoleId && targetMember) {
       await targetMember.roles.remove(config.unverifiedRoleId).catch(() => {});
     }
+    await targetMember
+      ?.send({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0xff0000)
+            .setTitle("Verification Accepted")
+            .setDescription("Welcome to **Night Stars**! You now have full access to the server."),
+        ],
+      })
+      .catch(() => {});
     await interaction.message.edit({
       embeds: [
         EmbedBuilder.from(embed)
           .setColor(0x2ecc71)
-          .setFooter({ text: `✅ Accepted by ${interaction.user.tag}` }),
+          .setFooter({ text: `Accepted by ${staffName}` }),
       ],
       components: [disabledRow],
     });
@@ -291,18 +329,17 @@ async function handleVerificationAction(interaction: ButtonInteraction) {
       ?.send({
         embeds: [
           new EmbedBuilder()
-            .setColor(0xe74c3c)
+            .setColor(0xff0000)
             .setTitle("Verification Denied")
-            .setDescription("Your verification for Night Stars was denied. You may try again."),
+            .setDescription("Your verification for **Night Stars** was denied. You may try again."),
         ],
       })
       .catch(() => {});
-
     await interaction.message.edit({
       embeds: [
         EmbedBuilder.from(embed)
           .setColor(0xe74c3c)
-          .setFooter({ text: `❌ Denied by ${interaction.user.tag}` }),
+          .setFooter({ text: `Denied by ${staffName}` }),
       ],
       components: [disabledRow],
     });
@@ -310,11 +347,21 @@ async function handleVerificationAction(interaction: ButtonInteraction) {
     if (config.jailRoleId && targetMember) {
       await targetMember.roles.add(config.jailRoleId).catch(() => {});
     }
+    await targetMember
+      ?.send({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0xff0000)
+            .setTitle("Verification — Jailed")
+            .setDescription("Your verification request was flagged. A staff member may contact you."),
+        ],
+      })
+      .catch(() => {});
     await interaction.message.edit({
       embeds: [
         EmbedBuilder.from(embed)
           .setColor(0x95a5a6)
-          .setFooter({ text: `⛓️ Jailed by ${interaction.user.tag}` }),
+          .setFooter({ text: `Jailed by ${staffName}` }),
       ],
       components: [disabledRow],
     });
@@ -385,8 +432,8 @@ async function handleVerificationAction(interaction: ButtonInteraction) {
     await ticketChannel.send({
       embeds: [
         new EmbedBuilder()
-          .setColor(0x3498db)
-          .setTitle("🎫 Assistance Ticket")
+          .setColor(0xff0000)
+          .setTitle("Assistance Ticket")
           .setDescription(`Ticket for <@${memberId}> — opened by <@${interaction.user.id}>`)
           .addFields({
             name: "Verification Answers",
@@ -402,7 +449,7 @@ async function handleVerificationAction(interaction: ButtonInteraction) {
     await interaction.message.edit({
       embeds: [
         EmbedBuilder.from(embed).setFooter({
-          text: `🎫 Ticket opened by ${interaction.user.tag} → #${ticketChannel.name}`,
+          text: `Ticket opened by ${staffName} → #${ticketChannel.name}`,
         }),
       ],
       components: [disabledRow],

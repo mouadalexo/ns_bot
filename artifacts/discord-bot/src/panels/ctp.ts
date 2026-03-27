@@ -34,7 +34,7 @@ function buildCtpPanelEmbed(state: CtpPanelState) {
     `**Game Name** — ${state.gameName ?? "not set"}`,
     `**Role** — ${state.gameRoleId ? `<@&${state.gameRoleId}>` : "not set"}`,
     `**Category** — ${state.categoryId ? `<#${state.categoryId}>` : "not set"}`,
-    `**Cooldown** — ${state.cooldown ? `${state.cooldown}s` : "60s (default)"}`,
+    `**Cooldown** — ${state.cooldown ? `${state.cooldown}min` : "10min (default)"}`,
     `**Output Channel** — ${state.outputChannelId ? `<#${state.outputChannelId}>` : "same channel as command"}`,
   ];
 
@@ -147,11 +147,11 @@ export async function openCtpDetailsModal(interaction: ButtonInteraction) {
     new ActionRowBuilder<TextInputBuilder>().addComponents(
       new TextInputBuilder()
         .setCustomId("cp_cooldown")
-        .setLabel("Cooldown in seconds (default: 60)")
+        .setLabel("Cooldown in minutes (default: 10)")
         .setStyle(TextInputStyle.Short)
         .setRequired(false)
-        .setMaxLength(6)
-        .setValue(state.cooldown ?? "60")
+        .setMaxLength(4)
+        .setValue(state.cooldown ?? "10")
     ),
     new ActionRowBuilder<TextInputBuilder>().addComponents(
       new TextInputBuilder()
@@ -174,7 +174,7 @@ export async function handleCtpDetailsModalSubmit(interaction: ModalSubmitIntera
 
   state.gameName = interaction.fields.getTextInputValue("cp_game_name").trim();
   const cooldownRaw = interaction.fields.getTextInputValue("cp_cooldown").trim();
-  state.cooldown = cooldownRaw || "60";
+  state.cooldown = cooldownRaw || "10";
   const pingMsg = interaction.fields.getTextInputValue("cp_ping_msg").trim();
   state.pingMessage = pingMsg || undefined;
 
@@ -199,7 +199,8 @@ export async function handleCtpPanelSave(interaction: ButtonInteraction) {
   }
 
   const guildId = interaction.guild!.id;
-  const cooldown = parseInt(state.cooldown ?? "60", 10);
+  const cooldownMinutes = parseInt(state.cooldown ?? "10", 10);
+  const cooldown = cooldownMinutes * 60;
 
   const existing = await db
     .select()
@@ -244,7 +245,7 @@ export async function handleCtpPanelSave(interaction: ButtonInteraction) {
             `**Game** — ${state.gameName}`,
             `**Role** — <@&${state.gameRoleId}>`,
             `**Category** — <#${state.categoryId}>`,
-            `**Cooldown** — ${cooldown}s`,
+            `**Cooldown** — ${cooldownMinutes}min`,
             `**Output Channel** — ${state.outputChannelId ? `<#${state.outputChannelId}>` : "same channel"}`,
           ].join("\n")
         )
