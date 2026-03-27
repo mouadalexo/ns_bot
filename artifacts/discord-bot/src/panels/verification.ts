@@ -243,6 +243,7 @@ export async function openEmbedCustomizeModal(interaction: ButtonInteraction) {
         .setStyle(TextInputStyle.Paragraph)
         .setRequired(true)
         .setMaxLength(2000)
+        .setPlaceholder("Static: <:name:id>  |  Animated: <a:name:id>\nGet it: type \\:emoji_name: in any channel → copy the result")
         .setValue(
           state.embedDescription ??
           "Welcome to **Night Stars**!\n\nClick the button below and answer the questions.\nA staff member will review your answers and verify you shortly."
