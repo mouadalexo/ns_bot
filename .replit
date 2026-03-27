@@ -44,3 +44,8 @@ expertMode = true
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 20000
+
+[userenv]
+
+[userenv.shared]
+"DISCORD TOKEN" = "MTQ4NjgzNjY5MTM1MTM3MTgwNg.GlGsfT.qKtT29ZQ6ENO-HL3XNPB3rhYPflAcscAWdNHTo"
