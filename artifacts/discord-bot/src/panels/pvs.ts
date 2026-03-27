@@ -17,6 +17,7 @@ import { eq } from "drizzle-orm";
 interface PvsPanelState {
   pvsCategoryId?: string;
   pvsManagerRoleId?: string;
+  pvsWaitingRoomChannelId?: string;
 }
 
 export const pvsPanelState = new Map<string, PvsPanelState>();
@@ -42,6 +43,13 @@ function buildPvsPanelEmbed(state: PvsPanelState) {
           ? `<@&${state.pvsManagerRoleId}>`
           : "Role that can use `+pv @member` to create rooms.",
         inline: false,
+      },
+      {
+        name: "Waiting Room `optional`",
+        value: state.pvsWaitingRoomChannelId
+          ? `<#${state.pvsWaitingRoomChannelId}>`
+          : "A voice channel always kept at the bottom of the category.",
+        inline: false,
       }
     )
     .setFooter({ text: "Night Stars • PVS" });
@@ -65,7 +73,16 @@ function buildPvsPanelComponents(state: PvsPanelState) {
       .setMaxValues(1)
   );
 
-  const row3 = new ActionRowBuilder<ButtonBuilder>().addComponents(
+  const row3 = new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
+    new ChannelSelectMenuBuilder()
+      .setCustomId("pp_waiting_room")
+      .setPlaceholder(state.pvsWaitingRoomChannelId ? "✅ Waiting Room — click to change" : "Waiting Room voice channel (optional)...")
+      .addChannelTypes(ChannelType.GuildVoice)
+      .setMinValues(0)
+      .setMaxValues(1)
+  );
+
+  const row4 = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId("pp_save")
       .setLabel("Save")
@@ -78,7 +95,7 @@ function buildPvsPanelComponents(state: PvsPanelState) {
       .setStyle(ButtonStyle.Danger)
   );
 
-  return [row1, row2, row3];
+  return [row1, row2, row3, row4];
 }
 
 export async function openPvsPanel(interaction: ButtonInteraction) {
@@ -94,6 +111,7 @@ export async function openPvsPanel(interaction: ButtonInteraction) {
   const state: PvsPanelState = {
     pvsCategoryId: existing?.pvsCategoryId ?? undefined,
     pvsManagerRoleId: existing?.pvsManagerRoleId ?? undefined,
+    pvsWaitingRoomChannelId: existing?.pvsWaitingRoomChannelId ?? undefined,
   };
   pvsPanelState.set(userId, state);
 
@@ -114,6 +132,8 @@ export async function handlePvsPanelSelect(
     state.pvsCategoryId = (interaction as ChannelSelectMenuInteraction).values[0] ?? undefined;
   } else if (interaction.customId === "pp_manager_role") {
     state.pvsManagerRoleId = (interaction as RoleSelectMenuInteraction).values[0] ?? undefined;
+  } else if (interaction.customId === "pp_waiting_room") {
+    state.pvsWaitingRoomChannelId = (interaction as ChannelSelectMenuInteraction).values[0] ?? undefined;
   }
 
   pvsPanelState.set(userId, state);
@@ -139,6 +159,7 @@ export async function handlePvsPanelSave(interaction: ButtonInteraction) {
     await db.update(botConfigTable).set({
       pvsCategoryId: state.pvsCategoryId ?? null,
       pvsManagerRoleId: state.pvsManagerRoleId ?? null,
+      pvsWaitingRoomChannelId: state.pvsWaitingRoomChannelId ?? null,
       pvsCreateChannelId: null,
       updatedAt: new Date(),
     }).where(eq(botConfigTable.guildId, guildId));
@@ -147,6 +168,7 @@ export async function handlePvsPanelSave(interaction: ButtonInteraction) {
       guildId,
       pvsCategoryId: state.pvsCategoryId ?? null,
       pvsManagerRoleId: state.pvsManagerRoleId ?? null,
+      pvsWaitingRoomChannelId: state.pvsWaitingRoomChannelId ?? null,
     });
   }
 
@@ -166,6 +188,11 @@ export async function handlePvsPanelSave(interaction: ButtonInteraction) {
           {
             name: "PVS Manager Role",
             value: state.pvsManagerRoleId ? `<@&${state.pvsManagerRoleId}>` : "Not set",
+            inline: true,
+          },
+          {
+            name: "Waiting Room",
+            value: state.pvsWaitingRoomChannelId ? `<#${state.pvsWaitingRoomChannelId}>` : "Not set",
             inline: true,
           }
         )

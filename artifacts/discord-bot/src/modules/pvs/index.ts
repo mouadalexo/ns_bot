@@ -125,7 +125,7 @@ async function createPrivateVoice(
   member: GuildMember,
   guild: import("discord.js").Guild,
   categoryId: string | null,
-  notifyMember = false
+  waitingRoomChannelId?: string | null
 ) {
   try {
     const newChannel = await guild.channels.create({
@@ -155,33 +155,37 @@ async function createPrivateVoice(
       ],
     });
 
-    await member.voice.setChannel(newChannel).catch(() => {});
-
     await db.insert(pvsVoicesTable).values({
       guildId: guild.id,
       channelId: newChannel.id,
       ownerId: member.id,
     });
 
-    if (notifyMember) {
-      const dmEmbed = new EmbedBuilder()
-        .setColor(0x9b59b6)
-        .setTitle("🎙️ Your Private Voice Room is Ready!")
-        .setDescription(
-          `Your room **${newChannel.name}** has been created and you've been moved in.\n\n` +
-          "Use these commands inside your server to manage it:"
-        )
-        .addFields(
-          { name: "`=key @user`", value: "Give or remove access for a member.", inline: false },
-          { name: "`=see keys`", value: "See who has access.", inline: false },
-          { name: "`=clear keys`", value: "Remove all keys — room goes fully private.", inline: false },
-          { name: "`=name NewName`", value: "Rename your voice room.", inline: false },
-        )
-        .setFooter({ text: "Night Stars • PVS — Room is deleted when empty" })
-        .setTimestamp();
-
-      await member.send({ embeds: [dmEmbed] }).catch(() => {});
+    if (waitingRoomChannelId) {
+      const waitingRoom = guild.channels.cache.get(waitingRoomChannelId);
+      if (waitingRoom) {
+        await waitingRoom.setPosition(999).catch(() => {});
+      }
     }
+
+    const welcomeEmbed = new EmbedBuilder()
+      .setColor(0x9b59b6)
+      .setTitle("🎙️ Welcome to your Premium Voice!")
+      .setDescription(
+        `Hey <@${member.id}>! Your private room is ready.\n\n` +
+        "Use these commands to manage who gets in:"
+      )
+      .addFields(
+        { name: "`=key @user`", value: "Give or remove access for a member.", inline: false },
+        { name: "`=see keys`", value: "See who currently has access.", inline: false },
+        { name: "`=clear keys`", value: "Remove all keys — room goes fully private.", inline: false },
+        { name: "`=name NewName`", value: "Rename your voice room.", inline: false },
+      )
+      .setFooter({ text: "Night Stars • PVS" })
+      .setTimestamp();
+
+    await newChannel.send({ content: `<@${member.id}>`, embeds: [welcomeEmbed] }).catch(() => {});
+
   } catch (err) {
     console.error("PVS: failed to create private voice", err);
   }
@@ -245,36 +249,29 @@ async function handleManagerCreatePVS(message: Message, manager: GuildMember, ar
       ownerId: target.id,
     });
 
-    const congratsEmbed = new EmbedBuilder()
+    if (config.pvsWaitingRoomChannelId) {
+      const waitingRoom = message.guild!.channels.cache.get(config.pvsWaitingRoomChannelId);
+      if (waitingRoom) await waitingRoom.setPosition(999).catch(() => {});
+    }
+
+    const welcomeEmbed = new EmbedBuilder()
       .setColor(0x9b59b6)
-      .setTitle("🎙️ Premium Voice — Activated")
+      .setTitle("🎙️ Welcome to your Premium Voice!")
       .setDescription(
         `Congratulations <@${target.id}>! 🎉\n\n` +
-        `Your private voice room **${newChannel.name}** has been created.\n` +
-        `Join it and use the commands below to manage access.`
+        `Your private room **${newChannel.name}** has been created.\n` +
+        "Use the commands below to manage who gets in:"
       )
       .addFields(
-        {
-          name: "Your Commands",
-          value:
-            "`=key @user` — Give or remove access for a member\n" +
-            "`=see keys` — See who has access\n" +
-            "`=clear keys` — Remove all access keys\n" +
-            "`=name NewName` — Rename your voice room",
-          inline: false,
-        },
-        {
-          name: "How it works",
-          value:
-            "Your room is **private by default** — only members you give a key to can join.\n" +
-            "The room is automatically deleted when everyone leaves.",
-          inline: false,
-        }
+        { name: "`=key @user`", value: "Give or remove access for a member.", inline: false },
+        { name: "`=see keys`", value: "See who currently has access.", inline: false },
+        { name: "`=clear keys`", value: "Remove all keys — room goes fully private.", inline: false },
+        { name: "`=name NewName`", value: "Rename your voice room.", inline: false },
       )
       .setFooter({ text: `Created by ${manager.displayName} • Night Stars PVS` })
       .setTimestamp();
 
-    await message.channel.send({ content: `<@${target.id}>`, embeds: [congratsEmbed] });
+    await newChannel.send({ content: `<@${target.id}>`, embeds: [welcomeEmbed] }).catch(() => {});
 
   } catch (err) {
     console.error("PVS: +pv create failed", err);
