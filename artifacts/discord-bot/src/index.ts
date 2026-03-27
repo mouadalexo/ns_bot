@@ -8,6 +8,7 @@ import { createServer } from "http";
 import { registerVerificationModule } from "./modules/verification/index.js";
 import { registerPVSModule } from "./modules/pvs/index.js";
 import { registerCTPModule } from "./modules/ctp/index.js";
+import { registerSystemRoleModule } from "./modules/system-role/index.js";
 import { registerPanelCommands } from "./panels/index.js";
 
 const port = process.env.PORT ? parseInt(process.env.PORT) : 3000;
@@ -82,6 +83,7 @@ if (!token) {
   });
 
   setImmediate(() => {
+    registerSystemRoleModule(client);
     registerVerificationModule(client);
     registerPVSModule(client);
     registerCTPModule(client);

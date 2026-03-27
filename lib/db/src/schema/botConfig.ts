@@ -3,6 +3,7 @@ import { pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
 export const botConfigTable = pgTable("bot_config", {
   id: serial("id").primaryKey(),
   guildId: text("guild_id").notNull().unique(),
+  systemRoleId: text("system_role_id"),
   unverifiedRoleId: text("unverified_role_id"),
   verifiedRoleId: text("verified_role_id"),
   jailRoleId: text("jail_role_id"),
