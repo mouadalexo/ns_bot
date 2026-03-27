@@ -124,7 +124,7 @@ export async function registerPanelCommands(client: Client) {
       sub.setName("verification").setDescription("Set up the Night Stars Verification system (NSV)")
     )
     .addSubcommand((sub) =>
-      sub.setName("premium").setDescription("Set up the Private Voice System (PVS)")
+      sub.setName("pvs").setDescription("Set up the Private Voice System (PVS)")
     )
     .addSubcommand((sub) =>
       sub.setName("ping").setDescription("Set up the Call to Play system (CTP)")
@@ -236,7 +236,7 @@ async function handleSetupCommand(interaction: ChatInputCommandInteraction) {
 
   if (sub === "verification") {
     await openVerifyPanel(interaction as unknown as ButtonInteraction);
-  } else if (sub === "premium") {
+  } else if (sub === "pvs") {
     await openPvsPanel(interaction as unknown as ButtonInteraction);
   } else if (sub === "ping") {
     await openCtpManagePanel(interaction as unknown as ButtonInteraction);
