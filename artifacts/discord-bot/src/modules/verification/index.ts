@@ -18,21 +18,36 @@ import { db } from "@workspace/db";
 import { botConfigTable, verificationSessionsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 
+const DEFAULT_QUESTIONS = [
+  "Wach nta mghribi ?",
+  "Mnin dkhlti l server ?",
+  "3lach dkhlti l server ?",
+  "Ch7al f3mrk ?",
+  "Chno lhaja libghiti tl9aha f server ?",
+];
+
+async function getQuestions(guildId: string): Promise<string[]> {
+  const config = await db
+    .select()
+    .from(botConfigTable)
+    .where(eq(botConfigTable.guildId, guildId))
+    .limit(1);
+  try {
+    if (config[0]?.verificationQuestions) {
+      return JSON.parse(config[0].verificationQuestions);
+    }
+  } catch {}
+  return DEFAULT_QUESTIONS;
+}
+
 export function buildVerificationPanelEmbed() {
   return new EmbedBuilder()
     .setColor(0x1a1a2e)
     .setTitle("⭐ Night Stars — Verification")
     .setDescription(
       "Welcome to **Night Stars**!\n\n" +
-      "To gain access to the server, you need to complete a quick verification.\n" +
-      "Click the button below and answer the 5 questions in the form that appears.\n\n" +
-      "**Questions:**\n" +
-      "1. Wach nta mghribi ?\n" +
-      "2. Mnin dkhlti l server ?\n" +
-      "3. 3lach dkhlti l server ?\n" +
-      "4. Ch7al f3mrk ?\n" +
-      "5. Chno lhaja libghiti tl9aha f server ?\n\n" +
-      "*Answer honestly — a staff member will review your answers.*"
+      "To get access to the server, click the button below and answer the questions in the form that appears.\n\n" +
+      "A staff member will review your answers and verify you shortly."
     )
     .setFooter({ text: "Night Stars • Verification System" })
     .setTimestamp();
@@ -42,58 +57,39 @@ function buildStartButton() {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId("verification_start")
-      .setLabel("🚀 Start Verification")
+      .setLabel("Start Verification")
+      .setEmoji("🚀")
       .setStyle(ButtonStyle.Primary)
   );
 }
 
-function buildVerificationModal() {
+async function buildVerificationModal(guildId: string) {
+  const questions = await getQuestions(guildId);
+
   const modal = new ModalBuilder()
     .setCustomId("verification_modal")
     .setTitle("Night Stars — Verification");
 
-  modal.addComponents(
-    new ActionRowBuilder<TextInputBuilder>().addComponents(
-      new TextInputBuilder()
-        .setCustomId("q1")
-        .setLabel("Wach nta mghribi ?")
-        .setStyle(TextInputStyle.Short)
-        .setRequired(true)
-        .setMaxLength(100)
-    ),
-    new ActionRowBuilder<TextInputBuilder>().addComponents(
-      new TextInputBuilder()
-        .setCustomId("q2")
-        .setLabel("Mnin dkhlti l server ?")
-        .setStyle(TextInputStyle.Short)
-        .setRequired(true)
-        .setMaxLength(200)
-    ),
-    new ActionRowBuilder<TextInputBuilder>().addComponents(
-      new TextInputBuilder()
-        .setCustomId("q3")
-        .setLabel("3lach dkhlti l server ?")
-        .setStyle(TextInputStyle.Paragraph)
-        .setRequired(true)
-        .setMaxLength(300)
-    ),
-    new ActionRowBuilder<TextInputBuilder>().addComponents(
-      new TextInputBuilder()
-        .setCustomId("q4")
-        .setLabel("Ch7al f3mrk ?")
-        .setStyle(TextInputStyle.Short)
-        .setRequired(true)
-        .setMaxLength(50)
-    ),
-    new ActionRowBuilder<TextInputBuilder>().addComponents(
-      new TextInputBuilder()
-        .setCustomId("q5")
-        .setLabel("Chno lhaja libghiti tl9aha f server ?")
-        .setStyle(TextInputStyle.Paragraph)
-        .setRequired(true)
-        .setMaxLength(300)
-    )
-  );
+  const styles = [
+    TextInputStyle.Short,
+    TextInputStyle.Short,
+    TextInputStyle.Paragraph,
+    TextInputStyle.Short,
+    TextInputStyle.Paragraph,
+  ];
+
+  for (let i = 0; i < 5; i++) {
+    modal.addComponents(
+      new ActionRowBuilder<TextInputBuilder>().addComponents(
+        new TextInputBuilder()
+          .setCustomId(`q${i + 1}`)
+          .setLabel(questions[i] ?? `Question ${i + 1}`)
+          .setStyle(styles[i] ?? TextInputStyle.Short)
+          .setRequired(true)
+          .setMaxLength(300)
+      )
+    );
+  }
 
   return modal;
 }
@@ -102,27 +98,24 @@ function buildVerificationLogEmbed(
   memberId: string,
   memberTag: string,
   createdAt: number,
-  answers: string[]
+  answers: string[],
+  questions: string[]
 ) {
   return new EmbedBuilder()
     .setColor(0xf1c40f)
-    .setTitle("New Verification Request")
+    .setTitle("📋 New Verification Request")
     .addFields(
       { name: "Member", value: `<@${memberId}> (${memberTag})`, inline: true },
       { name: "ID", value: memberId, inline: true },
-      {
-        name: "Account Created",
-        value: `<t:${Math.floor(createdAt / 1000)}:R>`,
-        inline: true,
-      },
-      { name: "\u200B", value: "**Answers**" },
-      { name: "1. Wach nta mghribi ?", value: answers[0] || "_No answer_" },
-      { name: "2. Mnin dkhlti l server ?", value: answers[1] || "_No answer_" },
-      { name: "3. 3lach dkhlti l server ?", value: answers[2] || "_No answer_" },
-      { name: "4. Ch7al f3mrk ?", value: answers[3] || "_No answer_" },
-      { name: "5. Chno lhaja libghiti tl9aha f server ?", value: answers[4] || "_No answer_" }
+      { name: "Account Created", value: `<t:${Math.floor(createdAt / 1000)}:R>`, inline: true },
+      { name: "\u200B", value: "**Answers**", inline: false },
+      ...questions.map((q, i) => ({
+        name: `${i + 1}. ${q}`,
+        value: answers[i] || "_No answer_",
+        inline: false,
+      }))
     )
-    .setFooter({ text: "Verificators: choose an action" })
+    .setFooter({ text: "Verificators: choose an action below" })
     .setTimestamp();
 }
 
@@ -130,22 +123,26 @@ function buildActionButtons(disabled = false) {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId("verify_accept")
-      .setLabel("✅ Accept")
+      .setLabel("Accept")
+      .setEmoji("✅")
       .setStyle(ButtonStyle.Success)
       .setDisabled(disabled),
     new ButtonBuilder()
       .setCustomId("verify_deny")
-      .setLabel("❌ Deny")
+      .setLabel("Deny")
+      .setEmoji("❌")
       .setStyle(ButtonStyle.Danger)
       .setDisabled(disabled),
     new ButtonBuilder()
       .setCustomId("verify_jail")
-      .setLabel("⛓ Jail")
+      .setLabel("Jail")
+      .setEmoji("⛓️")
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(disabled),
     new ButtonBuilder()
       .setCustomId("verify_ticket")
-      .setLabel("🎫 Open Ticket")
+      .setLabel("Open Ticket")
+      .setEmoji("🎫")
       .setStyle(ButtonStyle.Primary)
       .setDisabled(disabled)
   );
@@ -172,7 +169,8 @@ export function registerVerificationModule(client: Client) {
     if (!interaction.guild) return;
 
     if (interaction.isButton() && interaction.customId === "verification_start") {
-      await interaction.showModal(buildVerificationModal());
+      const modal = await buildVerificationModal(interaction.guild.id);
+      await interaction.showModal(modal);
       return;
     }
 
@@ -221,7 +219,7 @@ async function handleVerificationSubmit(interaction: ModalSubmitInteraction) {
         .setColor(0x2ecc71)
         .setTitle("✅ Answers Submitted!")
         .setDescription(
-          "Your answers have been sent to the staff for review.\nPlease wait — you will be verified shortly."
+          "Your answers have been sent to the staff for review.\nPlease be patient — you will be verified shortly."
         )
         .setFooter({ text: "Night Stars • Verification System" }),
     ],
@@ -236,12 +234,8 @@ async function handleVerificationSubmit(interaction: ModalSubmitInteraction) {
   ) as TextChannel | undefined;
   if (!logsChannel) return;
 
-  const logEmbed = buildVerificationLogEmbed(
-    user.id,
-    user.tag,
-    user.createdTimestamp,
-    answers
-  );
+  const questions = await getQuestions(guildId);
+  const logEmbed = buildVerificationLogEmbed(user.id, user.tag, user.createdTimestamp, answers, questions);
 
   await logsChannel.send({
     content: config.verificatorsRoleId ? `<@&${config.verificatorsRoleId}>` : undefined,
@@ -258,10 +252,7 @@ async function handleVerificationAction(interaction: ButtonInteraction) {
   const guildMember = interaction.guild!.members.cache.get(interaction.user.id);
   if (!guildMember) return;
 
-  if (
-    config.verificatorsRoleId &&
-    !guildMember.roles.cache.has(config.verificatorsRoleId)
-  ) {
+  if (config.verificatorsRoleId && !guildMember.roles.cache.has(config.verificatorsRoleId)) {
     await interaction.reply({
       content: "You do not have permission to use these buttons.",
       ephemeral: true,
@@ -281,6 +272,12 @@ async function handleVerificationAction(interaction: ButtonInteraction) {
   const { customId } = interaction;
 
   if (customId === "verify_accept") {
+    if (config.verifiedRoleId && targetMember) {
+      await targetMember.roles.add(config.verifiedRoleId).catch(() => {});
+    }
+    if (config.unverifiedRoleId && targetMember) {
+      await targetMember.roles.remove(config.unverifiedRoleId).catch(() => {});
+    }
     await interaction.message.edit({
       embeds: [
         EmbedBuilder.from(embed)
@@ -296,9 +293,7 @@ async function handleVerificationAction(interaction: ButtonInteraction) {
           new EmbedBuilder()
             .setColor(0xe74c3c)
             .setTitle("Verification Denied")
-            .setDescription(
-              "Your verification for Night Stars was denied. You may try again."
-            ),
+            .setDescription("Your verification for Night Stars was denied. You may try again."),
         ],
       })
       .catch(() => {});
@@ -312,20 +307,20 @@ async function handleVerificationAction(interaction: ButtonInteraction) {
       components: [disabledRow],
     });
   } else if (customId === "verify_jail") {
+    if (config.jailRoleId && targetMember) {
+      await targetMember.roles.add(config.jailRoleId).catch(() => {});
+    }
     await interaction.message.edit({
       embeds: [
         EmbedBuilder.from(embed)
           .setColor(0x95a5a6)
-          .setFooter({ text: `⛓ Jailed by ${interaction.user.tag}` }),
+          .setFooter({ text: `⛓️ Jailed by ${interaction.user.tag}` }),
       ],
       components: [disabledRow],
     });
   } else if (customId === "verify_ticket") {
     if (!config.assistanceCategoryId) {
-      await interaction.followUp({
-        content: "Assistance category is not configured.",
-        ephemeral: true,
-      });
+      await interaction.followUp({ content: "Assistance category is not configured.", ephemeral: true });
       return;
     }
 
@@ -345,10 +340,7 @@ async function handleVerificationAction(interaction: ButtonInteraction) {
     if (config.verificatorsRoleId) {
       ticketOverwrites.push({
         id: config.verificatorsRoleId,
-        allow: [
-          PermissionsBitField.Flags.ViewChannel,
-          PermissionsBitField.Flags.SendMessages,
-        ],
+        allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages],
       });
     }
 
@@ -356,10 +348,7 @@ async function handleVerificationAction(interaction: ButtonInteraction) {
       ticketOverwrites.push({
         id: targetMember.id,
         type: OverwriteType.Member,
-        allow: [
-          PermissionsBitField.Flags.ViewChannel,
-          PermissionsBitField.Flags.SendMessages,
-        ],
+        allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages],
       });
     }
 
@@ -391,19 +380,21 @@ async function handleVerificationAction(interaction: ButtonInteraction) {
         ]
       : [];
 
+    const questions = await getQuestions(guildId);
+
     await ticketChannel.send({
       embeds: [
         new EmbedBuilder()
           .setColor(0x3498db)
-          .setTitle("Assistance Ticket")
+          .setTitle("🎫 Assistance Ticket")
           .setDescription(`Ticket for <@${memberId}> — opened by <@${interaction.user.id}>`)
           .addFields({
             name: "Verification Answers",
             value: answers.length
-              ? answers.map((a, i) => `**Q${i + 1}:** ${a || "_No answer_"}`).join("\n")
+              ? answers.map((a, i) => `**${questions[i] ?? `Q${i + 1}`}**\n${a || "_No answer_"}`).join("\n\n")
               : "_Not available_",
           })
-          .setFooter({ text: "Ticket from verification" })
+          .setFooter({ text: "Night Stars • Ticket" })
           .setTimestamp(),
       ],
     });

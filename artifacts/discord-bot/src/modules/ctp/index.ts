@@ -38,8 +38,8 @@ export function registerCTPModule(client: Client) {
     if (!ctpConfig.length) return;
 
     const config = ctpConfig[0];
-
     const now = new Date();
+
     const cooldownRecord = await db
       .select()
       .from(ctpCooldownsTable)
@@ -56,39 +56,54 @@ export function registerCTPModule(client: Client) {
       const elapsed = (now.getTime() - lastUsed.getTime()) / 1000;
       if (elapsed < config.cooldownSeconds) {
         const remaining = Math.ceil(config.cooldownSeconds - elapsed);
-        const notice = await message.reply({
-          content: `Cooldown active. Please wait **${remaining}s** before calling again.`,
-        });
-        setTimeout(() => notice.delete().catch(() => {}), 5000);
+        const minutes = Math.floor(remaining / 60);
+        const seconds = remaining % 60;
+        const timeStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+
+        const cooldownEmbed = new EmbedBuilder()
+          .setColor(0xe74c3c)
+          .setTitle("⏳ Call to Play — Cooldown Active")
+          .setDescription(
+            `The **${config.gameName}** call was used recently.\n\n` +
+            `Please wait **${timeStr}** before calling again.`
+          )
+          .setFooter({ text: `Cooldown: ${config.cooldownSeconds}s • Night Stars CTP` });
+
         await message.delete().catch(() => {});
+        const notice = await message.channel.send({ embeds: [cooldownEmbed] });
+        setTimeout(() => notice.delete().catch(() => {}), 8000);
         return;
       }
     }
 
-    const firstSentence = content.split(/[.!?]/)[0].trim();
-    const pingText = config.pingMessage ?? firstSentence;
+    const pingText = config.pingMessage ?? content;
 
-    const embed = new EmbedBuilder()
-      .setColor(0x3498db)
+    const pingEmbed = new EmbedBuilder()
+      .setColor(0x9b59b6)
+      .setTitle(`🎮 ${config.gameName} — Call to Play`)
       .setDescription(
-        `<@&${config.gameRoleId}>\n${pingText}\n\n*Requested by ${member.displayName} — ${config.gameName}*`
-      );
+        `<@&${config.gameRoleId}>\n\n` +
+        `**${member.displayName}** is calling:\n` +
+        `> ${pingText}`
+      )
+      .addFields({
+        name: "Voice Channel",
+        value: `🔊 ${voiceChannel.name}`,
+        inline: true,
+      })
+      .setFooter({ text: `Night Stars CTP • Cooldown resets in ${config.cooldownSeconds}s` })
+      .setTimestamp();
 
     let targetChannel: TextChannel;
-
     if (config.outputChannelId) {
       const ch = message.guild.channels.cache.get(config.outputChannelId);
-      if (ch && ch.type === ChannelType.GuildText) {
-        targetChannel = ch as TextChannel;
-      } else {
-        targetChannel = message.channel as TextChannel;
-      }
+      targetChannel = (ch?.type === ChannelType.GuildText ? ch : message.channel) as TextChannel;
     } else {
       targetChannel = message.channel as TextChannel;
     }
 
-    await targetChannel.send({ embeds: [embed] });
     await message.delete().catch(() => {});
+    await targetChannel.send({ embeds: [pingEmbed] });
 
     if (cooldownRecord.length) {
       await db

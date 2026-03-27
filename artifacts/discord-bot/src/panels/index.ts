@@ -22,6 +22,8 @@ import {
   handleVerifyPanelSelect,
   handleVerifyPanelSave,
   handleVerifyPanelReset,
+  openEditQuestionsModal,
+  handleEditQuestionsSubmit,
 } from "./verification.js";
 import {
   openPvsPanel,
@@ -78,7 +80,7 @@ function buildMainPanel() {
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId("panel_open_ctp")
-      .setLabel("Call to Play")
+      .setLabel("CTP")
       .setEmoji("🎮")
       .setStyle(ButtonStyle.Success)
   );
@@ -101,7 +103,7 @@ function buildDeployChannelSelect() {
       .setTitle("📌 Post Verification Panel")
       .setDescription(
         "Choose the channel where the verification panel will be posted.\n\n" +
-        "New members will see a button to start their verification — their answers go straight to your logs channel for review."
+        "New members will see a **Start Verification** button — their answers go straight to your logs channel for review."
       )
       .setFooter({ text: "The panel will be posted as soon as you select a channel." }),
     row: new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
@@ -115,14 +117,63 @@ function buildDeployChannelSelect() {
   };
 }
 
+function buildPvsInfoEmbed() {
+  return new EmbedBuilder()
+    .setColor(0x9b59b6)
+    .setTitle("🎙️ PVS — Private Voice System Commands")
+    .setDescription("Commands for private voice room owners:")
+    .addFields(
+      { name: "`=key @user`", value: "Give or remove a member's access to your room.", inline: false },
+      { name: "`=see keys`", value: "List all members who have access to your room.", inline: false },
+      { name: "`=clear keys`", value: "Remove all keys — your room becomes fully private.", inline: false },
+      { name: "`=rename Name`", value: "Rename your voice room.", inline: false },
+      { name: "\u200B", value: "**Staff Command** (PVS Manager Role required)", inline: false },
+      { name: "`+pv @member`", value: "Create a private voice room for a member directly.", inline: false },
+    )
+    .setFooter({ text: "Night Stars • PVS" });
+}
+
+function buildCtpInfoEmbed() {
+  return new EmbedBuilder()
+    .setColor(0xe67e22)
+    .setTitle("🎮 CTP — Call to Play Commands")
+    .setDescription("Commands for calling players to your game:")
+    .addFields(
+      {
+        name: "`-your message`",
+        value:
+          "Ping the game role with your message.\n" +
+          "You must be in a voice channel under the configured game category.\n" +
+          "Example: `-we need one more for ranked!`",
+        inline: false,
+      },
+      {
+        name: "Cooldown",
+        value: "Each category has its own cooldown (set in `/setup`). If active, the bot will tell you how long to wait.",
+        inline: false,
+      },
+    )
+    .setFooter({ text: "Night Stars • CTP" });
+}
+
 export async function registerPanelCommands(client: Client) {
   const token = process.env.DISCORD_TOKEN;
   if (!token) throw new Error("DISCORD_TOKEN is missing");
 
-  const panelCommand = new SlashCommandBuilder()
-    .setName("panel")
+  const setupCommand = new SlashCommandBuilder()
+    .setName("setup")
     .setDescription("Open the Night Stars admin panel")
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
+    .toJSON();
+
+  const pvsCommand = new SlashCommandBuilder()
+    .setName("pvs")
+    .setDescription("Show all PVS (Private Voice System) commands")
+    .toJSON();
+
+  const ctpCommand = new SlashCommandBuilder()
+    .setName("ctp")
+    .setDescription("Show all CTP (Call to Play) commands")
     .toJSON();
 
   const rest = new REST().setToken(token);
@@ -130,62 +181,66 @@ export async function registerPanelCommands(client: Client) {
   for (const guild of client.guilds.cache.values()) {
     try {
       await rest.put(Routes.applicationGuildCommands(client.user!.id, guild.id), {
-        body: [panelCommand],
+        body: [setupCommand, pvsCommand, ctpCommand],
       });
+      console.log(`Registered slash commands for guild: ${guild.name}`);
     } catch (err) {
-      console.error(`Failed to register /panel for guild ${guild.name}:`, err);
+      console.error(`Failed to register commands for guild ${guild.name}:`, err);
     }
   }
 
   client.on("interactionCreate", async (interaction) => {
     if (!interaction.guild) return;
 
-    if (interaction.isChatInputCommand() && interaction.commandName === "panel") {
-      await handlePanelCommand(interaction as ChatInputCommandInteraction);
+    if (interaction.isChatInputCommand()) {
+      if (interaction.commandName === "setup") {
+        await handleSetupCommand(interaction as ChatInputCommandInteraction);
+      } else if (interaction.commandName === "pvs") {
+        await interaction.reply({ embeds: [buildPvsInfoEmbed()], ephemeral: true });
+      } else if (interaction.commandName === "ctp") {
+        await interaction.reply({ embeds: [buildCtpInfoEmbed()], ephemeral: true });
+      }
       return;
     }
 
     if (interaction.isButton()) {
       const panelIds = [
         "panel_open_verify", "panel_open_pvs", "panel_open_ctp", "panel_deploy_verify",
-        "vp_save", "vp_reset", "pp_save", "pp_reset",
+        "vp_save", "vp_reset", "vp_edit_questions",
+        "pp_save", "pp_reset",
         "cp_open_details", "cp_save", "cp_reset",
       ];
       if (panelIds.includes(interaction.customId)) {
-        await handleButtonInteraction(interaction);
+        await handleButtonInteraction(interaction as ButtonInteraction);
       }
       return;
     }
 
     if (interaction.isRoleSelectMenu()) {
-      await handleRoleSelectInteraction(interaction);
+      await handleRoleSelectInteraction(interaction as RoleSelectMenuInteraction);
       return;
     }
 
     if (interaction.isChannelSelectMenu()) {
-      await handleChannelSelectInteraction(interaction);
+      await handleChannelSelectInteraction(interaction as ChannelSelectMenuInteraction);
       return;
     }
 
-    if (interaction.isModalSubmit() && interaction.customId === "cp_details_modal") {
-      try {
-        await handleCtpDetailsModalSubmit(interaction);
-      } catch (err) {
-        console.error("CTP modal error:", err);
+    if (interaction.isModalSubmit()) {
+      if (interaction.customId === "cp_details_modal") {
+        try { await handleCtpDetailsModalSubmit(interaction as ModalSubmitInteraction); } catch (err) { console.error("CTP modal error:", err); }
+      } else if (interaction.customId === "vp_questions_modal") {
+        try { await handleEditQuestionsSubmit(interaction as ModalSubmitInteraction); } catch (err) { console.error("NSV questions modal error:", err); }
       }
     }
   });
 }
 
-async function handlePanelCommand(interaction: ChatInputCommandInteraction) {
+async function handleSetupCommand(interaction: ChatInputCommandInteraction) {
   const member = interaction.guild!.members.cache.get(interaction.user.id);
   if (!member?.permissions.has(PermissionsBitField.Flags.Administrator)) {
     await interaction.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setColor(0xe74c3c)
-          .setDescription("❌ You need **Administrator** permission to use this."),
-      ],
+      embeds: [new EmbedBuilder().setColor(0xe74c3c).setDescription("❌ You need **Administrator** permission to use this.")],
       ephemeral: true,
     });
     return;
@@ -211,6 +266,8 @@ async function handleButtonInteraction(interaction: ButtonInteraction) {
       await handleVerifyPanelSave(interaction);
     } else if (customId === "vp_reset") {
       await handleVerifyPanelReset(interaction);
+    } else if (customId === "vp_edit_questions") {
+      await openEditQuestionsModal(interaction);
     } else if (customId === "pp_save") {
       await handlePvsPanelSave(interaction);
     } else if (customId === "pp_reset") {
@@ -232,6 +289,8 @@ async function handleRoleSelectInteraction(interaction: RoleSelectMenuInteractio
   try {
     if (customId.startsWith("vp_")) {
       await handleVerifyPanelSelect(interaction);
+    } else if (customId.startsWith("pp_")) {
+      await handlePvsPanelSelect(interaction);
     } else if (customId.startsWith("cp_")) {
       await handleCtpPanelSelect(interaction);
     }
@@ -246,14 +305,11 @@ async function handleChannelSelectInteraction(interaction: ChannelSelectMenuInte
     if (customId === "deploy_verify_channel") {
       const channelId = interaction.values[0];
       const channel = interaction.guild!.channels.cache.get(channelId) as TextChannel | undefined;
-
       if (!channel || channel.type !== ChannelType.GuildText) {
         await interaction.reply({ content: "Invalid channel selected.", ephemeral: true });
         return;
       }
-
       await deployVerificationPanel(channel);
-
       await interaction.update({
         embeds: [
           new EmbedBuilder()

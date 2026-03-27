@@ -1,6 +1,7 @@
 import {
   Client,
   Message,
+  EmbedBuilder,
   PermissionsBitField,
   ChannelType,
   GuildMember,
@@ -10,21 +11,27 @@ import {
 import { db } from "@workspace/db";
 import { pvsVoicesTable, pvsKeysTable, botConfigTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
-import { successEmbed, errorEmbed } from "../../utils/embeds.js";
 
 const PVS_PREFIX = "=";
+const MANAGER_PREFIX = "+";
 
-async function sendTemp(msg: Message, embed: ReturnType<typeof successEmbed>) {
+async function sendTemp(msg: Message, embed: EmbedBuilder, delay = 12000) {
   try {
     await msg.delete().catch(() => {});
     const sent = await msg.channel.send({ embeds: [embed] });
-    setTimeout(() => sent.delete().catch(() => {}), 10000);
+    setTimeout(() => sent.delete().catch(() => {}), delay);
   } catch {}
 }
 
-async function getOwnerVoice(
-  member: GuildMember
-): Promise<VoiceChannel | null> {
+function errorEmbed(text: string) {
+  return new EmbedBuilder().setColor(0xe74c3c).setDescription(`❌ ${text}`);
+}
+
+function successEmbed(text: string) {
+  return new EmbedBuilder().setColor(0x2ecc71).setDescription(text);
+}
+
+async function getOwnerVoice(member: GuildMember): Promise<VoiceChannel | null> {
   if (!member.voice.channel) return null;
   const vc = member.voice.channel;
   if (vc.type !== ChannelType.GuildVoice) return null;
@@ -32,27 +39,41 @@ async function getOwnerVoice(
   const voice = await db
     .select()
     .from(pvsVoicesTable)
-    .where(
-      and(
-        eq(pvsVoicesTable.channelId, vc.id),
-        eq(pvsVoicesTable.ownerId, member.id)
-      )
-    )
+    .where(and(eq(pvsVoicesTable.channelId, vc.id), eq(pvsVoicesTable.ownerId, member.id)))
     .limit(1);
 
   if (voice.length === 0) return null;
   return vc as VoiceChannel;
 }
 
+async function getConfig(guildId: string) {
+  const result = await db
+    .select()
+    .from(botConfigTable)
+    .where(eq(botConfigTable.guildId, guildId))
+    .limit(1);
+  return result[0] ?? null;
+}
+
 export function registerPVSModule(client: Client) {
   client.on("messageCreate", async (message) => {
     if (message.author.bot) return;
     if (!message.guild) return;
+
+    const member = message.member;
+    if (!member) return;
+
+    if (message.content.startsWith(MANAGER_PREFIX)) {
+      const content = message.content.slice(MANAGER_PREFIX.length).trim();
+      if (content.toLowerCase().startsWith("pv ")) {
+        await handleManagerCreatePVS(message, member, content.slice(3).trim());
+      }
+      return;
+    }
+
     if (!message.content.startsWith(PVS_PREFIX)) return;
 
     const content = message.content.slice(PVS_PREFIX.length).trim();
-    const member = message.member;
-    if (!member) return;
 
     if (content.toLowerCase().startsWith("key ")) {
       await handleKey(message, member, content.slice(4).trim());
@@ -69,22 +90,13 @@ export function registerPVSModule(client: Client) {
     if (!newState.guild) return;
 
     const guildId = newState.guild.id;
-    const config = await db
-      .select()
-      .from(botConfigTable)
-      .where(eq(botConfigTable.guildId, guildId))
-      .limit(1);
+    const config = await getConfig(guildId);
+    if (!config?.pvsCreateChannelId) return;
 
-    if (!config.length || !config[0].pvsCreateChannelId) return;
+    const createChannelId = config.pvsCreateChannelId;
+    const pvsCategoryId = config.pvsCategoryId;
 
-    const createChannelId = config[0].pvsCreateChannelId;
-    const pvsCategoryId = config[0].pvsCategoryId;
-
-    if (
-      newState.channelId === createChannelId &&
-      newState.member &&
-      !newState.member.user.bot
-    ) {
+    if (newState.channelId === createChannelId && newState.member && !newState.member.user.bot) {
       await createPrivateVoice(newState.member, newState.guild, pvsCategoryId);
     }
 
@@ -101,12 +113,8 @@ export function registerPVSModule(client: Client) {
 
       if (voice.length === 0) return;
 
-      await db
-        .delete(pvsKeysTable)
-        .where(eq(pvsKeysTable.channelId, oldState.channelId));
-      await db
-        .delete(pvsVoicesTable)
-        .where(eq(pvsVoicesTable.channelId, oldState.channelId));
+      await db.delete(pvsKeysTable).where(eq(pvsKeysTable.channelId, oldState.channelId));
+      await db.delete(pvsVoicesTable).where(eq(pvsVoicesTable.channelId, oldState.channelId));
       await channel.delete().catch(() => {});
     }
   });
@@ -118,16 +126,12 @@ async function createPrivateVoice(
   pvsCategoryId: string | null
 ) {
   try {
-    const categoryId = pvsCategoryId ?? undefined;
     const newChannel = await guild.channels.create({
       name: `${member.displayName}'s Voice`,
       type: ChannelType.GuildVoice,
-      parent: categoryId,
+      parent: pvsCategoryId ?? undefined,
       permissionOverwrites: [
-        {
-          id: guild.id,
-          deny: [PermissionsBitField.Flags.Connect],
-        },
+        { id: guild.id, deny: [PermissionsBitField.Flags.Connect] },
         {
           id: member.id,
           type: OverwriteType.Member,
@@ -163,13 +167,105 @@ async function createPrivateVoice(
   }
 }
 
+async function handleManagerCreatePVS(message: Message, manager: GuildMember, args: string) {
+  const config = await getConfig(message.guild!.id);
+
+  if (!config?.pvsManagerRoleId || !manager.roles.cache.has(config.pvsManagerRoleId)) {
+    return;
+  }
+
+  const targetId = args.replace(/[<@!>]/g, "").trim();
+  if (!targetId) {
+    await sendTemp(message, errorEmbed("Please mention a member. Usage: `+pv @member`"));
+    return;
+  }
+
+  const target = await message.guild!.members.fetch(targetId).catch(() => null);
+  if (!target) {
+    await sendTemp(message, errorEmbed("Member not found."));
+    return;
+  }
+
+  try {
+    await message.delete().catch(() => {});
+
+    const newChannel = await message.guild!.channels.create({
+      name: `${target.displayName}'s Voice`,
+      type: ChannelType.GuildVoice,
+      parent: config.pvsCategoryId ?? undefined,
+      permissionOverwrites: [
+        { id: message.guild!.id, deny: [PermissionsBitField.Flags.Connect] },
+        {
+          id: target.id,
+          type: OverwriteType.Member,
+          allow: [
+            PermissionsBitField.Flags.Connect,
+            PermissionsBitField.Flags.ManageChannels,
+            PermissionsBitField.Flags.MoveMembers,
+            PermissionsBitField.Flags.MuteMembers,
+            PermissionsBitField.Flags.DeafenMembers,
+          ],
+        },
+        {
+          id: message.guild!.members.me!.id,
+          type: OverwriteType.Member,
+          allow: [
+            PermissionsBitField.Flags.Connect,
+            PermissionsBitField.Flags.ManageChannels,
+            PermissionsBitField.Flags.MoveMembers,
+          ],
+        },
+      ],
+    });
+
+    await db.insert(pvsVoicesTable).values({
+      guildId: message.guild!.id,
+      channelId: newChannel.id,
+      ownerId: target.id,
+    });
+
+    const congratsEmbed = new EmbedBuilder()
+      .setColor(0x9b59b6)
+      .setTitle("🎙️ Premium Voice — Activated")
+      .setDescription(
+        `Congratulations <@${target.id}>! 🎉\n\n` +
+        `Your private voice room **${newChannel.name}** has been created.\n` +
+        `Join it and use the commands below to manage who gets in.`
+      )
+      .addFields(
+        {
+          name: "Your Commands",
+          value:
+            "`=key @user` — Give or remove access for a member\n" +
+            "`=see keys` — See who currently has access\n" +
+            "`=clear keys` — Remove all access keys\n" +
+            "`=rename Name` — Rename your voice room",
+          inline: false,
+        },
+        {
+          name: "How it works",
+          value:
+            "Your room is **private by default** — only members you give a key to can join.\n" +
+            "When the last person leaves, the room is automatically deleted.",
+          inline: false,
+        }
+      )
+      .setFooter({ text: `Created by ${manager.displayName} • Night Stars PVS` })
+      .setTimestamp();
+
+    await message.channel.send({
+      content: `<@${target.id}>`,
+      embeds: [congratsEmbed],
+    });
+  } catch (err) {
+    console.error("PVS: +pv create failed", err);
+  }
+}
+
 async function handleKey(message: Message, member: GuildMember, args: string) {
   const vc = await getOwnerVoice(member);
   if (!vc) {
-    await sendTemp(
-      message,
-      errorEmbed("You must be the owner of a private voice channel to use this command.")
-    );
+    await sendTemp(message, errorEmbed("You must be the owner of a private voice channel to use this."));
     return;
   }
 
@@ -187,39 +283,24 @@ async function handleKey(message: Message, member: GuildMember, args: string) {
   const existing = await db
     .select()
     .from(pvsKeysTable)
-    .where(
-      and(eq(pvsKeysTable.channelId, vc.id), eq(pvsKeysTable.userId, targetId))
-    )
+    .where(and(eq(pvsKeysTable.channelId, vc.id), eq(pvsKeysTable.userId, targetId)))
     .limit(1);
 
   if (existing.length > 0) {
-    await db
-      .delete(pvsKeysTable)
-      .where(
-        and(
-          eq(pvsKeysTable.channelId, vc.id),
-          eq(pvsKeysTable.userId, targetId)
-        )
-      );
-
+    await db.delete(pvsKeysTable).where(
+      and(eq(pvsKeysTable.channelId, vc.id), eq(pvsKeysTable.userId, targetId))
+    );
     await vc.permissionOverwrites.delete(targetId).catch(() => {});
-    await sendTemp(
-      message,
-      successEmbed(`⚠️ <@${targetId}> lost the key!`)
+    await sendTemp(message, new EmbedBuilder()
+      .setColor(0xe67e22)
+      .setDescription(`🔑 <@${targetId}> **lost their key** to your voice room.`)
     );
   } else {
-    await db.insert(pvsKeysTable).values({
-      channelId: vc.id,
-      userId: targetId,
-    });
-
-    await vc.permissionOverwrites.edit(targetId, {
-      Connect: true,
-    });
-
-    await sendTemp(
-      message,
-      successEmbed(`✅ <@${targetId}> got the key successfully!`)
+    await db.insert(pvsKeysTable).values({ channelId: vc.id, userId: targetId });
+    await vc.permissionOverwrites.edit(targetId, { Connect: true });
+    await sendTemp(message, new EmbedBuilder()
+      .setColor(0x2ecc71)
+      .setDescription(`🔑 <@${targetId}> **received the key** to your voice room!`)
     );
   }
 }
@@ -227,70 +308,56 @@ async function handleKey(message: Message, member: GuildMember, args: string) {
 async function handleClearKeys(message: Message, member: GuildMember) {
   const vc = await getOwnerVoice(member);
   if (!vc) {
-    await sendTemp(
-      message,
-      errorEmbed("You must be the owner of a private voice channel to use this command.")
-    );
+    await sendTemp(message, errorEmbed("You must be the owner of a private voice channel to use this."));
     return;
   }
 
-  const keys = await db
-    .select()
-    .from(pvsKeysTable)
-    .where(eq(pvsKeysTable.channelId, vc.id));
-
+  const keys = await db.select().from(pvsKeysTable).where(eq(pvsKeysTable.channelId, vc.id));
   for (const key of keys) {
     await vc.permissionOverwrites.delete(key.userId).catch(() => {});
   }
-
   await db.delete(pvsKeysTable).where(eq(pvsKeysTable.channelId, vc.id));
 
-  await sendTemp(message, successEmbed("✅ All keys cleared successfully!"));
+  await sendTemp(message, successEmbed("🧹 All keys have been cleared. Your room is fully private again."));
 }
 
 async function handleSeeKeys(message: Message, member: GuildMember) {
   const vc = await getOwnerVoice(member);
   if (!vc) {
-    await sendTemp(
-      message,
-      errorEmbed("You must be the owner of a private voice channel to use this command.")
+    await sendTemp(message, errorEmbed("You must be the owner of a private voice channel to use this."));
+    return;
+  }
+
+  const keys = await db.select().from(pvsKeysTable).where(eq(pvsKeysTable.channelId, vc.id));
+
+  if (keys.length === 0) {
+    await sendTemp(message, new EmbedBuilder()
+      .setColor(0x95a5a6)
+      .setDescription("🔒 No keys given yet — your room is fully private.")
     );
     return;
   }
 
-  const keys = await db
-    .select()
-    .from(pvsKeysTable)
-    .where(eq(pvsKeysTable.channelId, vc.id));
-
-  if (keys.length === 0) {
-    await sendTemp(message, successEmbed("✅ No keys have been granted yet."));
-    return;
-  }
-
-  const mentions = keys.map((k) => `<@${k.userId}>`).join(", ");
-  await sendTemp(message, successEmbed(`✅ Current keys: ${mentions}`));
+  const mentions = keys.map((k) => `<@${k.userId}>`).join(" • ");
+  await sendTemp(message, new EmbedBuilder()
+    .setColor(0x3498db)
+    .setTitle("🔑 Current Keys")
+    .setDescription(mentions)
+  );
 }
 
-async function handleRename(
-  message: Message,
-  member: GuildMember,
-  newName: string
-) {
+async function handleRename(message: Message, member: GuildMember, newName: string) {
   if (!newName) {
-    await sendTemp(message, errorEmbed("Please provide a new name."));
+    await sendTemp(message, errorEmbed("Please provide a new name. Usage: `=rename Name`"));
     return;
   }
 
   const vc = await getOwnerVoice(member);
   if (!vc) {
-    await sendTemp(
-      message,
-      errorEmbed("You must be the owner of a private voice channel to use this command.")
-    );
+    await sendTemp(message, errorEmbed("You must be the owner of a private voice channel to use this."));
     return;
   }
 
   await vc.setName(newName).catch(() => {});
-  await sendTemp(message, successEmbed("✅ Voice renamed successfully!"));
+  await sendTemp(message, successEmbed(`✏️ Your voice room has been renamed to **${newName}**.`));
 }

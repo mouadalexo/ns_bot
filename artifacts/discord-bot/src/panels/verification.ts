@@ -2,12 +2,16 @@ import {
   ButtonInteraction,
   RoleSelectMenuInteraction,
   ChannelSelectMenuInteraction,
+  ModalSubmitInteraction,
   EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
   RoleSelectMenuBuilder,
   ChannelSelectMenuBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
   ChannelType,
 } from "discord.js";
 import { db } from "@workspace/db";
@@ -19,14 +23,20 @@ interface VerifyPanelState {
   logsChannelId?: string;
   verifyCategoryId?: string;
   assistCategoryId?: string;
+  verifiedRoleId?: string;
+  unverifiedRoleId?: string;
+  jailRoleId?: string;
 }
 
 export const verifyPanelState = new Map<string, VerifyPanelState>();
 
-function status(value?: string, label?: string) {
-  if (value) return `✅ ${label ?? "Selected"}`;
-  return `⬜ Not set`;
-}
+const DEFAULT_QUESTIONS = [
+  "Wach nta mghribi ?",
+  "Mnin dkhlti l server ?",
+  "3lach dkhlti l server ?",
+  "Ch7al f3mrk ?",
+  "Chno lhaja libghiti tl9aha f server ?",
+];
 
 function buildVerifyPanelEmbed(state: VerifyPanelState) {
   const allRequired = !!(state.verificatorsRoleId && state.logsChannelId);
@@ -34,23 +44,41 @@ function buildVerifyPanelEmbed(state: VerifyPanelState) {
   return new EmbedBuilder()
     .setColor(allRequired ? 0x2ecc71 : 0x5865f2)
     .setTitle("🛡️ NSV — Night Stars Verification Setup")
-    .setDescription(
-      "Configure who reviews new members and where the logs appear.\n" +
-      "Once saved, use **Post Verification Panel** from the main panel to deploy the join button."
-    )
     .addFields(
       {
         name: "Verificators Role `required`",
         value: state.verificatorsRoleId
           ? `<@&${state.verificatorsRoleId}>`
-          : "The role that can accept, deny or jail members.",
+          : "Staff who can accept, deny or jail members.",
         inline: true,
       },
       {
         name: "Logs Channel `required`",
         value: state.logsChannelId
           ? `<#${state.logsChannelId}>`
-          : "Where verification requests will be sent.",
+          : "Where verification requests are sent for review.",
+        inline: true,
+      },
+      { name: "\u200B", value: "\u200B", inline: false },
+      {
+        name: "Verified Role `optional`",
+        value: state.verifiedRoleId
+          ? `<@&${state.verifiedRoleId}>`
+          : "Granted when a member is accepted.",
+        inline: true,
+      },
+      {
+        name: "Unverified Role `optional`",
+        value: state.unverifiedRoleId
+          ? `<@&${state.unverifiedRoleId}>`
+          : "Removed when a member is accepted.",
+        inline: true,
+      },
+      {
+        name: "Jail Role `optional`",
+        value: state.jailRoleId
+          ? `<@&${state.jailRoleId}>`
+          : "Assigned when a member is jailed.",
         inline: true,
       },
       { name: "\u200B", value: "\u200B", inline: false },
@@ -58,7 +86,7 @@ function buildVerifyPanelEmbed(state: VerifyPanelState) {
         name: "Verification Category `optional`",
         value: state.verifyCategoryId
           ? `<#${state.verifyCategoryId}>`
-          : "Category for verification channels (if used).",
+          : "Category for verification channels.",
         inline: true,
       },
       {
@@ -82,44 +110,34 @@ function buildVerifyPanelComponents(state: VerifyPanelState) {
   const row1 = new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(
     new RoleSelectMenuBuilder()
       .setCustomId("vp_verificators_role")
-      .setPlaceholder(
-        state.verificatorsRoleId ? "✅ Verificators Role — click to change" : "Select Verificators Role..."
-      )
-      .setMinValues(1)
-      .setMaxValues(1)
+      .setPlaceholder(state.verificatorsRoleId ? "✅ Verificators Role — click to change" : "Select Verificators Role...")
+      .setMinValues(1).setMaxValues(1)
   );
 
   const row2 = new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
     new ChannelSelectMenuBuilder()
       .setCustomId("vp_logs_channel")
-      .setPlaceholder(
-        state.logsChannelId ? "✅ Logs Channel — click to change" : "Select Logs Channel..."
-      )
+      .setPlaceholder(state.logsChannelId ? "✅ Logs Channel — click to change" : "Select Logs Channel...")
       .addChannelTypes(ChannelType.GuildText)
-      .setMinValues(1)
-      .setMaxValues(1)
+      .setMinValues(1).setMaxValues(1)
   );
 
-  const row3 = new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
-    new ChannelSelectMenuBuilder()
-      .setCustomId("vp_verify_category")
+  const row3 = new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(
+    new RoleSelectMenuBuilder()
+      .setCustomId("vp_roles_group")
       .setPlaceholder(
-        state.verifyCategoryId ? "✅ Verification Category — click to change" : "Verification Category (optional)..."
+        [state.verifiedRoleId && "✅ Verified", state.unverifiedRoleId && "✅ Unverified", state.jailRoleId && "✅ Jail"]
+          .filter(Boolean).join(" • ") || "Select Verified / Unverified / Jail Role..."
       )
-      .addChannelTypes(ChannelType.GuildCategory)
-      .setMinValues(0)
-      .setMaxValues(1)
+      .setMinValues(1).setMaxValues(3)
   );
 
   const row4 = new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
     new ChannelSelectMenuBuilder()
-      .setCustomId("vp_assist_category")
-      .setPlaceholder(
-        state.assistCategoryId ? "✅ Assistance Category — click to change" : "Assistance Category (optional)..."
-      )
+      .setCustomId("vp_verify_category")
+      .setPlaceholder(state.verifyCategoryId ? "✅ Verification Category — click to change" : "Verification Category (optional)...")
       .addChannelTypes(ChannelType.GuildCategory)
-      .setMinValues(0)
-      .setMaxValues(1)
+      .setMinValues(0).setMaxValues(1)
   );
 
   const row5 = new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -129,6 +147,11 @@ function buildVerifyPanelComponents(state: VerifyPanelState) {
       .setEmoji(canSave ? "💾" : "🔒")
       .setStyle(canSave ? ButtonStyle.Success : ButtonStyle.Secondary)
       .setDisabled(!canSave),
+    new ButtonBuilder()
+      .setCustomId("vp_edit_questions")
+      .setLabel("Edit Questions")
+      .setEmoji("📝")
+      .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
       .setCustomId("vp_reset")
       .setLabel("Reset")
@@ -154,12 +177,84 @@ export async function openVerifyPanel(interaction: ButtonInteraction) {
     logsChannelId: existing?.verificationLogsChannelId ?? undefined,
     verifyCategoryId: existing?.verificationCategoryId ?? undefined,
     assistCategoryId: existing?.assistanceCategoryId ?? undefined,
+    verifiedRoleId: existing?.verifiedRoleId ?? undefined,
+    unverifiedRoleId: existing?.unverifiedRoleId ?? undefined,
+    jailRoleId: existing?.jailRoleId ?? undefined,
   };
   verifyPanelState.set(userId, state);
 
   await interaction.reply({
     embeds: [buildVerifyPanelEmbed(state)],
     components: buildVerifyPanelComponents(state),
+    ephemeral: true,
+  });
+}
+
+export async function openEditQuestionsModal(interaction: ButtonInteraction) {
+  const guildId = interaction.guild!.id;
+  const config = await db.select().from(botConfigTable).where(eq(botConfigTable.guildId, guildId)).limit(1);
+  let questions = DEFAULT_QUESTIONS;
+  try {
+    if (config[0]?.verificationQuestions) {
+      questions = JSON.parse(config[0].verificationQuestions);
+    }
+  } catch {}
+
+  const modal = new ModalBuilder()
+    .setCustomId("vp_questions_modal")
+    .setTitle("Edit Verification Questions");
+
+  for (let i = 0; i < 5; i++) {
+    modal.addComponents(
+      new ActionRowBuilder<TextInputBuilder>().addComponents(
+        new TextInputBuilder()
+          .setCustomId(`vq${i + 1}`)
+          .setLabel(`Question ${i + 1}`)
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setMaxLength(100)
+          .setValue(questions[i] ?? "")
+      )
+    );
+  }
+
+  await interaction.showModal(modal);
+}
+
+export async function handleEditQuestionsSubmit(interaction: ModalSubmitInteraction) {
+  const guildId = interaction.guild!.id;
+
+  const questions = [
+    interaction.fields.getTextInputValue("vq1").trim(),
+    interaction.fields.getTextInputValue("vq2").trim(),
+    interaction.fields.getTextInputValue("vq3").trim(),
+    interaction.fields.getTextInputValue("vq4").trim(),
+    interaction.fields.getTextInputValue("vq5").trim(),
+  ];
+
+  const existing = await db.select().from(botConfigTable).where(eq(botConfigTable.guildId, guildId)).limit(1);
+
+  if (existing.length) {
+    await db.update(botConfigTable).set({
+      verificationQuestions: JSON.stringify(questions),
+      updatedAt: new Date(),
+    }).where(eq(botConfigTable.guildId, guildId));
+  } else {
+    await db.insert(botConfigTable).values({
+      guildId,
+      verificationQuestions: JSON.stringify(questions),
+    });
+  }
+
+  await interaction.reply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor(0x2ecc71)
+        .setTitle("✅ Questions Updated")
+        .setDescription("The 5 verification questions have been saved. New members will see the updated questions.")
+        .addFields(questions.map((q, i) => ({ name: `Q${i + 1}`, value: q, inline: false })))
+        .setFooter({ text: "Night Stars • NSV" }),
+    ],
     ephemeral: true,
   });
 }
@@ -176,8 +271,12 @@ export async function handleVerifyPanelSelect(
     state.logsChannelId = (interaction as ChannelSelectMenuInteraction).values[0];
   } else if (interaction.customId === "vp_verify_category") {
     state.verifyCategoryId = (interaction as ChannelSelectMenuInteraction).values[0] ?? undefined;
-  } else if (interaction.customId === "vp_assist_category") {
     state.assistCategoryId = (interaction as ChannelSelectMenuInteraction).values[0] ?? undefined;
+  } else if (interaction.customId === "vp_roles_group") {
+    const values = (interaction as RoleSelectMenuInteraction).values;
+    if (values.length >= 1) state.verifiedRoleId = values[0];
+    if (values.length >= 2) state.unverifiedRoleId = values[1];
+    if (values.length >= 3) state.jailRoleId = values[2];
   }
 
   verifyPanelState.set(userId, state);
@@ -194,22 +293,14 @@ export async function handleVerifyPanelSave(interaction: ButtonInteraction) {
 
   if (!state.verificatorsRoleId || !state.logsChannelId) {
     await interaction.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setColor(0xe74c3c)
-          .setDescription("❌ Please fill in all required fields before saving."),
-      ],
+      embeds: [new EmbedBuilder().setColor(0xe74c3c).setDescription("❌ Please fill in all required fields before saving.")],
       ephemeral: true,
     });
     return;
   }
 
   const guildId = interaction.guild!.id;
-  const existing = await db
-    .select()
-    .from(botConfigTable)
-    .where(eq(botConfigTable.guildId, guildId))
-    .limit(1);
+  const existing = await db.select().from(botConfigTable).where(eq(botConfigTable.guildId, guildId)).limit(1);
 
   if (existing.length) {
     await db.update(botConfigTable).set({
@@ -217,6 +308,9 @@ export async function handleVerifyPanelSave(interaction: ButtonInteraction) {
       verificationLogsChannelId: state.logsChannelId,
       verificationCategoryId: state.verifyCategoryId ?? null,
       assistanceCategoryId: state.assistCategoryId ?? null,
+      verifiedRoleId: state.verifiedRoleId ?? null,
+      unverifiedRoleId: state.unverifiedRoleId ?? null,
+      jailRoleId: state.jailRoleId ?? null,
       updatedAt: new Date(),
     }).where(eq(botConfigTable.guildId, guildId));
   } else {
@@ -226,6 +320,9 @@ export async function handleVerifyPanelSave(interaction: ButtonInteraction) {
       verificationLogsChannelId: state.logsChannelId,
       verificationCategoryId: state.verifyCategoryId ?? null,
       assistanceCategoryId: state.assistCategoryId ?? null,
+      verifiedRoleId: state.verifiedRoleId ?? null,
+      unverifiedRoleId: state.unverifiedRoleId ?? null,
+      jailRoleId: state.jailRoleId ?? null,
     });
   }
 
@@ -235,25 +332,16 @@ export async function handleVerifyPanelSave(interaction: ButtonInteraction) {
     embeds: [
       new EmbedBuilder()
         .setColor(0x2ecc71)
-        .setTitle("✅ Verification Saved")
+        .setTitle("✅ NSV Saved")
         .addFields(
           { name: "Verificators Role", value: `<@&${state.verificatorsRoleId}>`, inline: true },
           { name: "Logs Channel", value: `<#${state.logsChannelId}>`, inline: true },
-          {
-            name: "Verification Category",
-            value: state.verifyCategoryId ? `<#${state.verifyCategoryId}>` : "Not set",
-            inline: true,
-          },
-          {
-            name: "Assistance Category",
-            value: state.assistCategoryId ? `<#${state.assistCategoryId}>` : "Not set",
-            inline: true,
-          }
+          { name: "Verified Role", value: state.verifiedRoleId ? `<@&${state.verifiedRoleId}>` : "Not set", inline: true },
+          { name: "Unverified Role", value: state.unverifiedRoleId ? `<@&${state.unverifiedRoleId}>` : "Not set", inline: true },
+          { name: "Jail Role", value: state.jailRoleId ? `<@&${state.jailRoleId}>` : "Not set", inline: true },
         )
-        .setDescription(
-          "Configuration saved. Use **Post Verification Panel** from the main panel to deploy the join button in a channel."
-        )
-        .setFooter({ text: "Night Stars • Verification System" }),
+        .setDescription("Configuration saved. Use **Post Verification Panel** from the main panel to deploy the join button.")
+        .setFooter({ text: "Night Stars • NSV" }),
     ],
     components: [],
   });
@@ -262,7 +350,6 @@ export async function handleVerifyPanelSave(interaction: ButtonInteraction) {
 export async function handleVerifyPanelReset(interaction: ButtonInteraction) {
   const state: VerifyPanelState = {};
   verifyPanelState.set(interaction.user.id, state);
-
   await interaction.update({
     embeds: [buildVerifyPanelEmbed(state)],
     components: buildVerifyPanelComponents(state),
