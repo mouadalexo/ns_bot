@@ -48,16 +48,10 @@ if (!token) {
     ],
   });
 
-  setTimeout(() => {
-    registerVerificationModule(client);
-    registerPVSModule(client);
-    registerCTPModule(client);
-  }, 100);
-
   const loginTimeout = setTimeout(() => {
-    console.error("[Bot] Login timeout — bot did not respond within 60 seconds");
+    console.error("[Bot] Login timeout — bot did not respond within 120 seconds");
     process.exit(1);
-  }, 60000);
+  }, 120000);
 
   client.once("clientReady", async () => {
     clearTimeout(loginTimeout);
@@ -81,4 +75,10 @@ if (!token) {
     clearTimeout(loginTimeout);
     console.error("[Bot] Login failed:", err?.code, err?.message ?? err);
   });
+
+  setTimeout(() => {
+    registerVerificationModule(client);
+    registerPVSModule(client);
+    registerCTPModule(client);
+  }, 500);
 }
