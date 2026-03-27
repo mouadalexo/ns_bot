@@ -27,6 +27,7 @@ import {
   handleEditQuestionsSubmit,
   openEmbedCustomizeModal,
   handleEmbedCustomizeSubmit,
+  handleEmbedPreviewBack,
 } from "./verification.js";
 import {
   openPvsPanel,
@@ -189,7 +190,7 @@ export async function registerPanelCommands(client: Client) {
     if (interaction.isButton()) {
       const panelIds = [
         "panel_deploy_verify",
-        "vp_save", "vp_reset", "vp_edit_questions", "vp_edit_embed",
+        "vp_save", "vp_reset", "vp_edit_questions", "vp_edit_embed", "vp_embed_back",
         "pp_save", "pp_reset",
         "cp_add_new", "cp_edit_game", "cp_remove_game", "cp_back_manage",
         "cp_open_details", "cp_save", "cp_reset",
@@ -267,6 +268,8 @@ async function handleButtonInteraction(interaction: ButtonInteraction) {
       await openEditQuestionsModal(interaction);
     } else if (customId === "vp_edit_embed") {
       await openEmbedCustomizeModal(interaction);
+    } else if (customId === "vp_embed_back") {
+      await handleEmbedPreviewBack(interaction);
     } else if (customId === "pp_save") {
       await handlePvsPanelSave(interaction);
     } else if (customId === "pp_reset") {

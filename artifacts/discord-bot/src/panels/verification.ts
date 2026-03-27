@@ -280,6 +280,29 @@ export async function handleEmbedCustomizeSubmit(interaction: ModalSubmitInterac
     });
   }
 
+  const previewEmbed = new EmbedBuilder()
+    .setColor(0xff0000)
+    .setTitle(state.embedTitle || "Night Stars — Verification")
+    .setDescription(state.embedDescription ||
+      "Welcome to **Night Stars**!\n\nClick the button below and answer the questions.\nA staff member will review your answers and verify you shortly."
+    )
+    .setFooter({ text: "Night Stars • Verification System" });
+
+  const backRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId("vp_embed_back")
+      .setLabel("Back to Setup")
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  await interaction.update({
+    embeds: [previewEmbed],
+    components: [backRow],
+  });
+}
+
+export async function handleEmbedPreviewBack(interaction: ButtonInteraction) {
+  const state = verifyPanelState.get(interaction.user.id) ?? {};
   await interaction.update({
     embeds: [buildVerifyPanelEmbed(state)],
     components: buildVerifyPanelComponents(state),
