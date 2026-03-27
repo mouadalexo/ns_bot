@@ -113,7 +113,7 @@ export function registerCTPModule(client: Client) {
         const remaining = Math.ceil(config.cooldownSeconds - elapsed);
         const minutes = Math.floor(remaining / 60);
         const seconds = remaining % 60;
-        const timeStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+        const timeStr = minutes > 0 ? `${minutes} m ${seconds} s` : `${seconds} s`;
 
         await message.delete().catch(() => {});
         const notice = await message.channel.send({
