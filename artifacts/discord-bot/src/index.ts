@@ -48,37 +48,42 @@ if (!token) {
     ],
   });
 
-  const loginTimeout = setTimeout(() => {
-    console.error("[Bot] Login timeout — bot did not respond within 120 seconds");
-    process.exit(1);
-  }, 120000);
-
   client.once("clientReady", async () => {
-    clearTimeout(loginTimeout);
     console.log(`[Bot] Online as ${client.user?.tag}`);
     console.log(`[Bot] Serving ${client.guilds.cache.size} guild(s)`);
-    client.user?.setPresence({
-      activities: [{ name: "Night Stars", type: ActivityType.Watching }],
-      status: "online",
-    });
-    registerPanelCommands(client).catch((err) => {
+    try {
+      client.user?.setPresence({
+        activities: [{ name: "Night Stars", type: ActivityType.Watching }],
+        status: "online",
+      });
+    } catch (err) {
+      console.warn("[Bot] Could not set presence:", err);
+    }
+    
+    try {
+      await registerPanelCommands(client);
+      console.log("[Bot] Commands registered successfully");
+    } catch (err) {
       console.error("[Bot] Error registering commands:", err);
-    });
+    }
   });
 
   client.on("error", (err) => {
     console.error("[Bot] Client error:", err);
   });
 
+  client.on("warn", (msg) => {
+    console.warn("[Bot] Warning:", msg);
+  });
+
   console.log("[Bot] Attempting Discord login...");
   client.login(token).catch((err) => {
-    clearTimeout(loginTimeout);
     console.error("[Bot] Login failed:", err?.code, err?.message ?? err);
   });
 
-  setTimeout(() => {
+  setImmediate(() => {
     registerVerificationModule(client);
     registerPVSModule(client);
     registerCTPModule(client);
-  }, 500);
+  });
 }
