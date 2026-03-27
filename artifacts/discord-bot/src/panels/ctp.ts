@@ -23,9 +23,7 @@ interface CtpPanelState {
   gameRoleId?: string;
   gameName?: string;
   cooldownSeconds?: number;
-  cooldownDisplay?: string;
   pingMessage?: string;
-  outputChannelId?: string;
 }
 
 export const ctpPanelState = new Map<string, CtpPanelState>();
@@ -65,7 +63,6 @@ function buildCtpPanelEmbed(state: CtpPanelState) {
     `**Role** — ${state.gameRoleId ? `<@&${state.gameRoleId}>` : "not set"}`,
     `**Category** — ${state.categoryId ? `<#${state.categoryId}>` : "not set"}`,
     `**Cooldown** — ${cooldownStr}`,
-    `**Output Channel** — ${state.outputChannelId ? `<#${state.outputChannelId}>` : "same channel as command"}`,
   ];
 
   return new EmbedBuilder()
@@ -95,15 +92,6 @@ function buildCtpPanelComponents(state: CtpPanelState) {
       .setMaxValues(1)
   );
 
-  const row3 = new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
-    new ChannelSelectMenuBuilder()
-      .setCustomId("cp_output_channel")
-      .setPlaceholder(state.outputChannelId ? "Output Channel (set)" : "Output Channel (optional)...")
-      .addChannelTypes(ChannelType.GuildText)
-      .setMinValues(0)
-      .setMaxValues(1)
-  );
-
   const cooldownStr = state.cooldownSeconds != null
     ? formatSeconds(state.cooldownSeconds)
     : "10m";
@@ -124,7 +112,7 @@ function buildCtpPanelComponents(state: CtpPanelState) {
       .setStyle(ButtonStyle.Danger)
   );
 
-  return [row1, row2, row3, row4];
+  return [row1, row2, row4];
 }
 
 export async function openCtpPanel(interaction: ButtonInteraction) {
@@ -166,12 +154,9 @@ export async function handleCtpPanelSelect(
       state.gameRoleId = ex.gameRoleId;
       state.cooldownSeconds = ex.cooldownSeconds;
       state.pingMessage = ex.pingMessage ?? undefined;
-      state.outputChannelId = ex.outputChannelId ?? undefined;
     }
   } else if (interaction.customId === "cp_game_role") {
     state.gameRoleId = (interaction as RoleSelectMenuInteraction).values[0];
-  } else if (interaction.customId === "cp_output_channel") {
-    state.outputChannelId = (interaction as ChannelSelectMenuInteraction).values[0] ?? undefined;
   }
 
   ctpPanelState.set(userId, state);
@@ -272,7 +257,6 @@ export async function handleCtpPanelSave(interaction: ButtonInteraction) {
       gameRoleId: state.gameRoleId,
       cooldownSeconds,
       pingMessage: state.pingMessage ?? null,
-      outputChannelId: state.outputChannelId ?? null,
       enabled: 1,
     }).where(and(eq(ctpCategoriesTable.guildId, guildId), eq(ctpCategoriesTable.categoryId, state.categoryId)));
   } else {
@@ -283,7 +267,6 @@ export async function handleCtpPanelSave(interaction: ButtonInteraction) {
       gameRoleId: state.gameRoleId,
       cooldownSeconds,
       pingMessage: state.pingMessage ?? null,
-      outputChannelId: state.outputChannelId ?? null,
     });
   }
 
@@ -304,7 +287,6 @@ export async function handleCtpPanelSave(interaction: ButtonInteraction) {
             `**Role** — <@&${state.gameRoleId}>`,
             `**Category** — <#${state.categoryId}>`,
             `**Cooldown** — ${formatSeconds(cooldownSeconds)}`,
-            `**Output Channel** — ${state.outputChannelId ? `<#${state.outputChannelId}>` : "same channel"}`,
           ].join("\n")
         )
         .setFooter({ text: "Night Stars • CTP" }),

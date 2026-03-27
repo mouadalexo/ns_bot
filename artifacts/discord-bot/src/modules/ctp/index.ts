@@ -156,37 +156,18 @@ export function registerCTPModule(client: Client) {
 
     const pingEmbed = new EmbedBuilder()
       .setColor(0xff0000)
-      .setTitle(`${config.gameName} — Call to Play`)
       .setDescription(
-        `<@&${config.gameRoleId}>\n\n` +
-        `**${member.displayName}** is calling:\n` +
-        `> ${pingText}`
-      )
-      .addFields({
-        name: "Voice Channel",
-        value: voiceChannel.name,
-        inline: true,
-      })
-      .setFooter({ text: `Night Stars CTP • Cooldown: ${formatSeconds(config.cooldownSeconds)}` })
-      .setTimestamp();
+        `<@&${config.gameRoleId}>\n` +
+        `**${member.displayName}** — ${pingText}`
+      );
 
-    let outputChannel: TextChannel;
-    if (config.outputChannelId) {
-      const ch = message.guild.channels.cache.get(config.outputChannelId);
-      outputChannel = (ch?.type === ChannelType.GuildText ? ch : message.channel) as TextChannel;
-    } else {
-      outputChannel = message.channel as TextChannel;
-    }
+    await voiceChannel.send({ embeds: [pingEmbed] });
 
-    await message.delete().catch(() => {});
-    await outputChannel.send({ embeds: [pingEmbed] });
-
-    const confirmChannel = message.channel as TextChannel;
     const confirmMsg = isGameManager
-      ? `Tag sent! (Cooldown bypassed — game manager)`
+      ? `Tag sent! (Cooldown bypassed)`
       : `Tag sent! You can re-tag after **${formatSeconds(config.cooldownSeconds)}**.`;
 
-    const confirm = await confirmChannel.send({
+    const confirm = await (message.channel as TextChannel).send({
       embeds: [
         new EmbedBuilder()
           .setColor(0xff0000)
