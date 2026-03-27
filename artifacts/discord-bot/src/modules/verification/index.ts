@@ -72,9 +72,9 @@ async function buildVerificationModal(guildId: string) {
   const styles = [
     TextInputStyle.Short,
     TextInputStyle.Short,
-    TextInputStyle.Paragraph,
     TextInputStyle.Short,
-    TextInputStyle.Paragraph,
+    TextInputStyle.Short,
+    TextInputStyle.Short,
   ];
 
   for (let i = 0; i < 5; i++) {

@@ -239,7 +239,7 @@ export async function openEmbedCustomizeModal(interaction: ButtonInteraction) {
     new ActionRowBuilder<TextInputBuilder>().addComponents(
       new TextInputBuilder()
         .setCustomId("vp_embed_desc")
-        .setLabel("Description (use <:name:id> for server emojis)")
+        .setLabel("Description (use <:name:id> for emojis)")
         .setStyle(TextInputStyle.Paragraph)
         .setRequired(true)
         .setMaxLength(2000)
