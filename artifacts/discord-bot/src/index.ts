@@ -48,11 +48,19 @@ if (!token) {
     ],
   });
 
-  registerVerificationModule(client);
-  registerPVSModule(client);
-  registerCTPModule(client);
+  setTimeout(() => {
+    registerVerificationModule(client);
+    registerPVSModule(client);
+    registerCTPModule(client);
+  }, 100);
+
+  const loginTimeout = setTimeout(() => {
+    console.error("[Bot] Login timeout — bot did not respond within 60 seconds");
+    process.exit(1);
+  }, 60000);
 
   client.once("clientReady", async () => {
+    clearTimeout(loginTimeout);
     console.log(`[Bot] Online as ${client.user?.tag}`);
     console.log(`[Bot] Serving ${client.guilds.cache.size} guild(s)`);
     client.user?.setPresence({
@@ -70,6 +78,7 @@ if (!token) {
 
   console.log("[Bot] Attempting Discord login...");
   client.login(token).catch((err) => {
+    clearTimeout(loginTimeout);
     console.error("[Bot] Login failed:", err?.code, err?.message ?? err);
   });
 }
