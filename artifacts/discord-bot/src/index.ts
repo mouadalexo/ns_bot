@@ -21,7 +21,7 @@ createServer((_, res) => {
 
 const token = process.env.DISCORD_TOKEN?.trim();
 if (!token) {
-  console.error("DISCORD_TOKEN environment variable is not set.");
+  console.error("DISCORD_TOKEN is not set — bot will not connect.");
   process.exit(1);
 }
 
@@ -62,7 +62,18 @@ client.on("error", (err) => {
   console.error("Discord client error:", err);
 });
 
-client.login(token).catch((err) => {
-  console.error("Failed to login:", err);
-  process.exit(1);
-});
+async function connectWithRetry(retryDelay = 30000) {
+  try {
+    await client.login(token);
+  } catch (err: any) {
+    if (err?.code === "TokenInvalid") {
+      console.error("Token is invalid — update DISCORD_TOKEN and redeploy.");
+    } else {
+      console.error("Login failed:", err?.message ?? err);
+      console.log(`Retrying in ${retryDelay / 1000}s...`);
+      setTimeout(() => connectWithRetry(retryDelay), retryDelay);
+    }
+  }
+}
+
+connectWithRetry();
