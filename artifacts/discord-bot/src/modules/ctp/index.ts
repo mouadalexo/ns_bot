@@ -1,9 +1,17 @@
 import { Client, Message, EmbedBuilder, ChannelType, TextChannel } from "discord.js";
 import { db } from "@workspace/db";
-import { ctpCategoriesTable, ctpCooldownsTable } from "@workspace/db";
+import { botConfigTable, ctpCategoriesTable, ctpCooldownsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 
 const CTP_PREFIX = "-";
+
+function formatSeconds(total: number): string {
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  if (m > 0 && s > 0) return `${m}m ${s}s`;
+  if (m > 0) return `${m}m`;
+  return `${s}s`;
+}
 
 export function registerCTPModule(client: Client) {
   client.on("messageCreate", async (message: Message) => {
@@ -33,8 +41,8 @@ export function registerCTPModule(client: Client) {
             .setColor(0xe74c3c)
             .setDescription(
               allConfigs.length
-                ? `❌ You must join a **${gameNames}** voice channel first before tagging.`
-                : "❌ You must be in a game voice channel first before tagging."
+                ? `You must join a **${gameNames}** voice channel first before tagging.`
+                : "You must be in a game voice channel first before tagging."
             ),
         ],
       });
@@ -50,7 +58,7 @@ export function registerCTPModule(client: Client) {
         embeds: [
           new EmbedBuilder()
             .setColor(0xe74c3c)
-            .setDescription("❌ This voice channel is not set up for Call to Play."),
+            .setDescription("This voice channel is not set up for Call to Play."),
         ],
       });
       setTimeout(() => notice.delete().catch(() => {}), 6000);
@@ -83,8 +91,8 @@ export function registerCTPModule(client: Client) {
             .setColor(0xe74c3c)
             .setDescription(
               allConfigs.length
-                ? `❌ You must join a ${gameNames} voice channel first before tagging.`
-                : "❌ This voice channel is not set up for Call to Play."
+                ? `You must join a ${gameNames} voice channel first before tagging.`
+                : "This voice channel is not set up for Call to Play."
             ),
         ],
       });
@@ -94,6 +102,15 @@ export function registerCTPModule(client: Client) {
 
     const config = ctpConfig[0];
     const now = new Date();
+
+    const serverConfig = await db
+      .select()
+      .from(botConfigTable)
+      .where(eq(botConfigTable.guildId, message.guild.id))
+      .limit(1);
+
+    const gameManagerRoleId = serverConfig[0]?.gameManagerRoleId;
+    const isGameManager = !!(gameManagerRoleId && member.roles.cache.has(gameManagerRoleId));
 
     const cooldownRecord = await db
       .select()
@@ -106,26 +123,24 @@ export function registerCTPModule(client: Client) {
       )
       .limit(1);
 
-    if (cooldownRecord.length) {
+    if (!isGameManager && cooldownRecord.length) {
       const lastUsed = cooldownRecord[0].lastUsedAt;
       const elapsed = (now.getTime() - lastUsed.getTime()) / 1000;
       if (elapsed < config.cooldownSeconds) {
         const remaining = Math.ceil(config.cooldownSeconds - elapsed);
-        const minutes = Math.floor(remaining / 60);
-        const seconds = remaining % 60;
-        const timeStr = minutes > 0 ? `${minutes} m ${seconds} s` : `${seconds} s`;
+        const timeStr = formatSeconds(remaining);
 
         await message.delete().catch(() => {});
         const notice = await message.channel.send({
           embeds: [
             new EmbedBuilder()
               .setColor(0xe74c3c)
-              .setTitle("⏳ Cooldown Active")
+              .setTitle("Cooldown Active")
               .setDescription(
                 `The **${config.gameName}** tag was used recently.\n` +
                 `You can re-tag in **${timeStr}**.`
               )
-              .setFooter({ text: `Cooldown: ${Math.round(config.cooldownSeconds / 60)}min • Night Stars CTP` }),
+              .setFooter({ text: `Cooldown: ${formatSeconds(config.cooldownSeconds)} • Night Stars CTP` }),
           ],
         });
         setTimeout(() => notice.delete().catch(() => {}), 8000);
@@ -136,8 +151,8 @@ export function registerCTPModule(client: Client) {
     const pingText = config.pingMessage ?? content;
 
     const pingEmbed = new EmbedBuilder()
-      .setColor(0x9b59b6)
-      .setTitle(`🎮 ${config.gameName} — Call to Play`)
+      .setColor(0xff0000)
+      .setTitle(`${config.gameName} — Call to Play`)
       .setDescription(
         `<@&${config.gameRoleId}>\n\n` +
         `**${member.displayName}** is calling:\n` +
@@ -145,10 +160,10 @@ export function registerCTPModule(client: Client) {
       )
       .addFields({
         name: "Voice Channel",
-        value: `🔊 ${voiceChannel.name}`,
+        value: voiceChannel.name,
         inline: true,
       })
-      .setFooter({ text: `Night Stars CTP • Cooldown: ${Math.round(config.cooldownSeconds / 60)}min` })
+      .setFooter({ text: `Night Stars CTP • Cooldown: ${formatSeconds(config.cooldownSeconds)}` })
       .setTimestamp();
 
     let outputChannel: TextChannel;
@@ -163,11 +178,15 @@ export function registerCTPModule(client: Client) {
     await outputChannel.send({ embeds: [pingEmbed] });
 
     const confirmChannel = message.channel as TextChannel;
+    const confirmMsg = isGameManager
+      ? `Tag sent! (Cooldown bypassed — game manager)`
+      : `Tag sent! You can re-tag after **${formatSeconds(config.cooldownSeconds)}**.`;
+
     const confirm = await confirmChannel.send({
       embeds: [
         new EmbedBuilder()
-          .setColor(0x2ecc71)
-          .setDescription(`✅ Tag sent! You can re-tag after **${Math.round(config.cooldownSeconds / 60)}min**.`),
+          .setColor(0xff0000)
+          .setDescription(`✅ ${confirmMsg}`),
       ],
     });
     setTimeout(() => confirm.delete().catch(() => {}), 6000);
