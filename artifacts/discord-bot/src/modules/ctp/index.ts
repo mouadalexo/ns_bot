@@ -128,7 +128,8 @@ export function registerCTPModule(client: Client) {
 
     const pingEmbed = new EmbedBuilder()
       .setColor(0xff0000)
-      .setDescription(`**${member.displayName}** — ${pingMessage}`);
+      .setDescription(`**${member.displayName}** — ${pingMessage}`)
+      .setFooter({ text: `Next tag available in ${formatSeconds(config.cooldownSeconds)}` });
 
     await voiceChannel.send({
       content: `<@&${config.gameRoleId}>`,
