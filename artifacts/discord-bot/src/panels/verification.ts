@@ -255,6 +255,8 @@ export async function openEmbedCustomizeModal(interaction: ButtonInteraction) {
 }
 
 export async function handleEmbedCustomizeSubmit(interaction: ModalSubmitInteraction) {
+  await interaction.deferUpdate();
+
   const userId = interaction.user.id;
   const state = verifyPanelState.get(userId) ?? {};
 
@@ -262,6 +264,8 @@ export async function handleEmbedCustomizeSubmit(interaction: ModalSubmitInterac
   state.embedDescription = interaction.fields.getTextInputValue("vp_embed_desc").trim();
 
   verifyPanelState.set(userId, state);
+
+  console.log(`[NSV Embed] Saving — title: "${state.embedTitle}", desc: "${state.embedDescription?.slice(0, 80)}"`);
 
   const guildId = interaction.guild!.id;
   const existing = await db.select().from(botConfigTable).where(eq(botConfigTable.guildId, guildId)).limit(1);
@@ -295,7 +299,7 @@ export async function handleEmbedCustomizeSubmit(interaction: ModalSubmitInterac
       .setStyle(ButtonStyle.Secondary)
   );
 
-  await interaction.update({
+  await interaction.editReply({
     embeds: [previewEmbed],
     components: [backRow],
   });
