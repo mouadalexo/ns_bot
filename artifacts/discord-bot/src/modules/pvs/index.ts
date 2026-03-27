@@ -15,6 +15,37 @@ import { eq, and } from "drizzle-orm";
 const PVS_PREFIX = "=";
 const MANAGER_PREFIX = "+";
 
+const OWNER_PERMS = [
+  PermissionsBitField.Flags.ViewChannel,
+  PermissionsBitField.Flags.Connect,
+  PermissionsBitField.Flags.Speak,
+  PermissionsBitField.Flags.Stream,
+  PermissionsBitField.Flags.ReadMessageHistory,
+  PermissionsBitField.Flags.DeafenMembers,
+  PermissionsBitField.Flags.UseVAD,
+  PermissionsBitField.Flags.UseSoundboard,
+  PermissionsBitField.Flags.UseExternalSounds,
+  PermissionsBitField.Flags.SendMessages,
+  PermissionsBitField.Flags.EmbedLinks,
+  PermissionsBitField.Flags.AttachFiles,
+  PermissionsBitField.Flags.AddReactions,
+];
+
+const KEY_HOLDER_PERMS = [
+  PermissionsBitField.Flags.ViewChannel,
+  PermissionsBitField.Flags.Connect,
+  PermissionsBitField.Flags.Speak,
+  PermissionsBitField.Flags.Stream,
+  PermissionsBitField.Flags.ReadMessageHistory,
+  PermissionsBitField.Flags.UseVAD,
+  PermissionsBitField.Flags.UseSoundboard,
+  PermissionsBitField.Flags.UseExternalSounds,
+  PermissionsBitField.Flags.SendMessages,
+  PermissionsBitField.Flags.EmbedLinks,
+  PermissionsBitField.Flags.AttachFiles,
+  PermissionsBitField.Flags.AddReactions,
+];
+
 async function sendTemp(msg: Message, embed: EmbedBuilder, delay = 12000) {
   try {
     await msg.delete().catch(() => {});
@@ -81,8 +112,8 @@ export function registerPVSModule(client: Client) {
       await handleClearKeys(message, member);
     } else if (content.toLowerCase() === "see keys") {
       await handleSeeKeys(message, member);
-    } else if (content.toLowerCase().startsWith("rename ")) {
-      await handleRename(message, member, content.slice(7).trim());
+    } else if (content.toLowerCase().startsWith("name ")) {
+      await handleRename(message, member, content.slice(5).trim());
     }
   });
 
@@ -94,10 +125,12 @@ export function registerPVSModule(client: Client) {
     if (!config?.pvsCreateChannelId) return;
 
     const createChannelId = config.pvsCreateChannelId;
-    const pvsCategoryId = config.pvsCategoryId;
 
     if (newState.channelId === createChannelId && newState.member && !newState.member.user.bot) {
-      await createPrivateVoice(newState.member, newState.guild, pvsCategoryId);
+      const createChannel = newState.guild.channels.cache.get(createChannelId);
+      const fallbackCategoryId = createChannel?.parentId ?? null;
+      const categoryId = config.pvsCategoryId ?? fallbackCategoryId;
+      await createPrivateVoice(newState.member, newState.guild, categoryId, true);
     }
 
     if (oldState.channelId && oldState.channelId !== createChannelId) {
@@ -123,30 +156,29 @@ export function registerPVSModule(client: Client) {
 async function createPrivateVoice(
   member: GuildMember,
   guild: import("discord.js").Guild,
-  pvsCategoryId: string | null
+  categoryId: string | null,
+  notifyMember = false
 ) {
   try {
     const newChannel = await guild.channels.create({
       name: `${member.displayName}'s Voice`,
       type: ChannelType.GuildVoice,
-      parent: pvsCategoryId ?? undefined,
+      parent: categoryId ?? undefined,
       permissionOverwrites: [
-        { id: guild.id, deny: [PermissionsBitField.Flags.Connect] },
+        {
+          id: guild.id,
+          deny: [PermissionsBitField.Flags.Connect],
+        },
         {
           id: member.id,
           type: OverwriteType.Member,
-          allow: [
-            PermissionsBitField.Flags.Connect,
-            PermissionsBitField.Flags.ManageChannels,
-            PermissionsBitField.Flags.MoveMembers,
-            PermissionsBitField.Flags.MuteMembers,
-            PermissionsBitField.Flags.DeafenMembers,
-          ],
+          allow: OWNER_PERMS,
         },
         {
           id: guild.members.me!.id,
           type: OverwriteType.Member,
           allow: [
+            PermissionsBitField.Flags.ViewChannel,
             PermissionsBitField.Flags.Connect,
             PermissionsBitField.Flags.ManageChannels,
             PermissionsBitField.Flags.MoveMembers,
@@ -162,6 +194,26 @@ async function createPrivateVoice(
       channelId: newChannel.id,
       ownerId: member.id,
     });
+
+    if (notifyMember) {
+      const dmEmbed = new EmbedBuilder()
+        .setColor(0x9b59b6)
+        .setTitle("🎙️ Your Private Voice Room is Ready!")
+        .setDescription(
+          `Your room **${newChannel.name}** has been created and you've been moved in.\n\n` +
+          "Use these commands inside your server to manage it:"
+        )
+        .addFields(
+          { name: "`=key @user`", value: "Give or remove access for a member.", inline: false },
+          { name: "`=see keys`", value: "See who has access.", inline: false },
+          { name: "`=clear keys`", value: "Remove all keys — room goes fully private.", inline: false },
+          { name: "`=name NewName`", value: "Rename your voice room.", inline: false },
+        )
+        .setFooter({ text: "Night Stars • PVS — Room is deleted when empty" })
+        .setTimestamp();
+
+      await member.send({ embeds: [dmEmbed] }).catch(() => {});
+    }
   } catch (err) {
     console.error("PVS: failed to create private voice", err);
   }
@@ -189,27 +241,28 @@ async function handleManagerCreatePVS(message: Message, manager: GuildMember, ar
   try {
     await message.delete().catch(() => {});
 
+    const createChannel = config.pvsCreateChannelId
+      ? message.guild!.channels.cache.get(config.pvsCreateChannelId)
+      : null;
+    const fallbackCategoryId = createChannel?.parentId ?? null;
+    const categoryId = config.pvsCategoryId ?? fallbackCategoryId;
+
     const newChannel = await message.guild!.channels.create({
       name: `${target.displayName}'s Voice`,
       type: ChannelType.GuildVoice,
-      parent: config.pvsCategoryId ?? undefined,
+      parent: categoryId ?? undefined,
       permissionOverwrites: [
         { id: message.guild!.id, deny: [PermissionsBitField.Flags.Connect] },
         {
           id: target.id,
           type: OverwriteType.Member,
-          allow: [
-            PermissionsBitField.Flags.Connect,
-            PermissionsBitField.Flags.ManageChannels,
-            PermissionsBitField.Flags.MoveMembers,
-            PermissionsBitField.Flags.MuteMembers,
-            PermissionsBitField.Flags.DeafenMembers,
-          ],
+          allow: OWNER_PERMS,
         },
         {
           id: message.guild!.members.me!.id,
           type: OverwriteType.Member,
           allow: [
+            PermissionsBitField.Flags.ViewChannel,
             PermissionsBitField.Flags.Connect,
             PermissionsBitField.Flags.ManageChannels,
             PermissionsBitField.Flags.MoveMembers,
@@ -230,33 +283,31 @@ async function handleManagerCreatePVS(message: Message, manager: GuildMember, ar
       .setDescription(
         `Congratulations <@${target.id}>! 🎉\n\n` +
         `Your private voice room **${newChannel.name}** has been created.\n` +
-        `Join it and use the commands below to manage who gets in.`
+        `Join it and use the commands below to manage access.`
       )
       .addFields(
         {
           name: "Your Commands",
           value:
             "`=key @user` — Give or remove access for a member\n" +
-            "`=see keys` — See who currently has access\n" +
+            "`=see keys` — See who has access\n" +
             "`=clear keys` — Remove all access keys\n" +
-            "`=rename Name` — Rename your voice room",
+            "`=name NewName` — Rename your voice room",
           inline: false,
         },
         {
           name: "How it works",
           value:
             "Your room is **private by default** — only members you give a key to can join.\n" +
-            "When the last person leaves, the room is automatically deleted.",
+            "The room is automatically deleted when everyone leaves.",
           inline: false,
         }
       )
       .setFooter({ text: `Created by ${manager.displayName} • Night Stars PVS` })
       .setTimestamp();
 
-    await message.channel.send({
-      content: `<@${target.id}>`,
-      embeds: [congratsEmbed],
-    });
+    await message.channel.send({ content: `<@${target.id}>`, embeds: [congratsEmbed] });
+
   } catch (err) {
     console.error("PVS: +pv create failed", err);
   }
@@ -297,7 +348,20 @@ async function handleKey(message: Message, member: GuildMember, args: string) {
     );
   } else {
     await db.insert(pvsKeysTable).values({ channelId: vc.id, userId: targetId });
-    await vc.permissionOverwrites.edit(targetId, { Connect: true });
+    await vc.permissionOverwrites.edit(targetId, {
+      ViewChannel: true,
+      Connect: true,
+      Speak: true,
+      Stream: true,
+      ReadMessageHistory: true,
+      UseVAD: true,
+      UseSoundboard: true,
+      UseExternalSounds: true,
+      SendMessages: true,
+      EmbedLinks: true,
+      AttachFiles: true,
+      AddReactions: true,
+    });
     await sendTemp(message, new EmbedBuilder()
       .setColor(0x2ecc71)
       .setDescription(`🔑 <@${targetId}> **received the key** to your voice room!`)
@@ -348,7 +412,7 @@ async function handleSeeKeys(message: Message, member: GuildMember) {
 
 async function handleRename(message: Message, member: GuildMember, newName: string) {
   if (!newName) {
-    await sendTemp(message, errorEmbed("Please provide a new name. Usage: `=rename Name`"));
+    await sendTemp(message, errorEmbed("Please provide a new name. Usage: `=name NewName`"));
     return;
   }
 

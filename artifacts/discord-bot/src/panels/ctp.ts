@@ -29,39 +29,31 @@ interface CtpPanelState {
 
 export const ctpPanelState = new Map<string, CtpPanelState>();
 
-function buildCtpPanelEmbed(state: CtpPanelState, guildId: string) {
+function buildCtpPanelEmbed(state: CtpPanelState) {
   const canSave = !!(state.categoryId && state.gameRoleId && state.gameName);
 
   return new EmbedBuilder()
     .setColor(canSave ? 0x2ecc71 : 0xe67e22)
-    .setTitle("🎮 Call to Play Setup")
-    .setDescription(
-      "Link a voice category to a game role.\n\n" +
-      "When a member is in any voice channel under the category, they type:\n" +
-      "`-we need one more!` → bot pings the game role with their message.\n\n" +
-      "A cooldown prevents spam between calls."
-    )
+    .setTitle("🎮 CTP — Call to Play Setup")
     .addFields(
-      {
-        name: "Game Category `required`",
-        value: state.categoryId
-          ? `<#${state.categoryId}>`
-          : "The category containing your game voice channels.",
-        inline: true,
-      },
-      {
-        name: "Game Role `required`",
-        value: state.gameRoleId
-          ? `<@&${state.gameRoleId}>`
-          : "The role pinged when a player calls.",
-        inline: true,
-      },
-      { name: "\u200B", value: "\u200B", inline: false },
       {
         name: "Game Name `required`",
         value: state.gameName ?? "Set via **Game Details** button below.",
         inline: true,
       },
+      {
+        name: "Role `required`",
+        value: state.gameRoleId ? `<@&${state.gameRoleId}>` : "The role that gets pinged.",
+        inline: true,
+      },
+      {
+        name: "Category `required`",
+        value: state.categoryId
+          ? `<#${state.categoryId}>`
+          : "Category with your game voice channels.",
+        inline: true,
+      },
+      { name: "\u200B", value: "\u200B", inline: false },
       {
         name: "Cooldown",
         value: state.cooldown ? `${state.cooldown}s` : "60s (default)",
@@ -81,7 +73,7 @@ function buildCtpPanelEmbed(state: CtpPanelState, guildId: string) {
     .setFooter({
       text: canSave
         ? "Ready to save — click Save."
-        : "Select the category, game role, and set game details to continue.",
+        : "Fill in Game Name, Role and Category to continue.",
     });
 }
 
@@ -91,7 +83,7 @@ function buildCtpPanelComponents(state: CtpPanelState) {
   const row1 = new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
     new ChannelSelectMenuBuilder()
       .setCustomId("cp_category")
-      .setPlaceholder(state.categoryId ? "✅ Game Category — click to change" : "Select Game Category...")
+      .setPlaceholder(state.categoryId ? "✅ Category — click to change" : "Select Game Category...")
       .addChannelTypes(ChannelType.GuildCategory)
       .setMinValues(1)
       .setMaxValues(1)
@@ -100,7 +92,7 @@ function buildCtpPanelComponents(state: CtpPanelState) {
   const row2 = new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(
     new RoleSelectMenuBuilder()
       .setCustomId("cp_game_role")
-      .setPlaceholder(state.gameRoleId ? "✅ Game Role — click to change" : "Select Game Role to ping...")
+      .setPlaceholder(state.gameRoleId ? "✅ Role — click to change" : "Select Role to ping...")
       .setMinValues(1)
       .setMaxValues(1)
   );
@@ -117,7 +109,7 @@ function buildCtpPanelComponents(state: CtpPanelState) {
   const row4 = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId("cp_open_details")
-      .setLabel(state.gameName ? `Game Details — ${state.gameName}` : "Set Game Details")
+      .setLabel(state.gameName ? `Game Details — ${state.gameName}` : "Set Game Name & Cooldown")
       .setEmoji("📝")
       .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
@@ -142,7 +134,7 @@ export async function openCtpPanel(interaction: ButtonInteraction) {
   ctpPanelState.set(userId, state);
 
   await interaction.reply({
-    embeds: [buildCtpPanelEmbed(state, interaction.guild!.id)],
+    embeds: [buildCtpPanelEmbed(state)],
     components: buildCtpPanelComponents(state),
     ephemeral: true,
   });
@@ -165,7 +157,7 @@ export async function handleCtpPanelSelect(
   ctpPanelState.set(userId, state);
 
   await interaction.update({
-    embeds: [buildCtpPanelEmbed(state, interaction.guild!.id)],
+    embeds: [buildCtpPanelEmbed(state)],
     components: buildCtpPanelComponents(state),
   });
 }
@@ -224,7 +216,7 @@ export async function handleCtpDetailsModalSubmit(interaction: ModalSubmitIntera
   ctpPanelState.set(userId, state);
 
   await interaction.update({
-    embeds: [buildCtpPanelEmbed(state, interaction.guild!.id)],
+    embeds: [buildCtpPanelEmbed(state)],
     components: buildCtpPanelComponents(state),
   });
 }
@@ -235,11 +227,7 @@ export async function handleCtpPanelSave(interaction: ButtonInteraction) {
 
   if (!state.categoryId || !state.gameRoleId || !state.gameName) {
     await interaction.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setColor(0xe74c3c)
-          .setDescription("❌ Please fill in all required fields before saving."),
-      ],
+      embeds: [new EmbedBuilder().setColor(0xe74c3c).setDescription("❌ Please fill in all required fields before saving.")],
       ephemeral: true,
     });
     return;
@@ -285,21 +273,16 @@ export async function handleCtpPanelSave(interaction: ButtonInteraction) {
     embeds: [
       new EmbedBuilder()
         .setColor(0x2ecc71)
-        .setTitle("✅ Call to Play Saved")
+        .setTitle("✅ CTP Saved")
         .addFields(
+          { name: "Game Name", value: state.gameName, inline: true },
+          { name: "Role", value: `<@&${state.gameRoleId}>`, inline: true },
           { name: "Category", value: `<#${state.categoryId}>`, inline: true },
-          { name: "Game", value: state.gameName, inline: true },
-          { name: "Game Role", value: `<@&${state.gameRoleId}>`, inline: true },
           { name: "Cooldown", value: `${cooldown}s`, inline: true },
-          { name: "Ping Message", value: state.pingMessage ?? "Member's message", inline: true },
-          {
-            name: "Output Channel",
-            value: state.outputChannelId ? `<#${state.outputChannelId}>` : "Same channel",
-            inline: true,
-          }
+          { name: "Custom Message", value: state.pingMessage ?? "Member's message", inline: true },
+          { name: "Output Channel", value: state.outputChannelId ? `<#${state.outputChannelId}>` : "Same channel", inline: true }
         )
-        .setDescription("Members in any voice under this category can now use `-message` to call players.")
-        .setFooter({ text: "Night Stars • Call to Play" }),
+        .setFooter({ text: "Night Stars • CTP" }),
     ],
     components: [],
   });
@@ -308,9 +291,8 @@ export async function handleCtpPanelSave(interaction: ButtonInteraction) {
 export async function handleCtpPanelReset(interaction: ButtonInteraction) {
   const state: CtpPanelState = {};
   ctpPanelState.set(interaction.user.id, state);
-
   await interaction.update({
-    embeds: [buildCtpPanelEmbed(state, interaction.guild!.id)],
+    embeds: [buildCtpPanelEmbed(state)],
     components: buildCtpPanelComponents(state),
   });
 }
