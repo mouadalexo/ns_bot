@@ -88,7 +88,7 @@ outputType = "console"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd /home/runner/workspace/moningu-local/artifacts/discord-bot && node_modules/.bin/tsx src/index.ts"
+args = "cd /home/runner/workspace/moningu-local && pnpm install --frozen-lockfile && cd artifacts/discord-bot && node_modules/.bin/tsx src/index.ts"
 
 [agent]
 stack = "PNPM_WORKSPACE"
