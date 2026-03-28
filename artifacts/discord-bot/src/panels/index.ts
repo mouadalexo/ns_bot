@@ -5,7 +5,6 @@ import {
   ButtonBuilder,
   ButtonStyle,
   ButtonInteraction,
-  ChannelSelectMenuBuilder,
   ChannelSelectMenuInteraction,
   RoleSelectMenuInteraction,
   ModalSubmitInteraction,
@@ -15,21 +14,8 @@ import {
   SlashCommandBuilder,
   ChatInputCommandInteraction,
   StringSelectMenuInteraction,
-  TextChannel,
-  ChannelType,
 } from "discord.js";
 import { isMainGuild } from "../utils/guildFilter.js";
-import {
-  openVerifyPanel,
-  handleVerifyPanelSelect,
-  handleVerifyPanelSave,
-  handleVerifyPanelReset,
-  openEditQuestionsModal,
-  handleEditQuestionsSubmit,
-  openEmbedCustomizeModal,
-  handleEmbedCustomizeSubmit,
-  handleEmbedPreviewBack,
-} from "./verification.js";
 import {
   openPvsPanel,
   handlePvsPanelSelect,
@@ -55,25 +41,7 @@ import {
   handleStaffPanelSave,
   handleStaffPanelReset,
 } from "./staff.js";
-import { deployVerificationPanel } from "../modules/verification/index.js";
 
-function buildDeployChannelSelect() {
-  return {
-    embed: new EmbedBuilder()
-      .setColor(0x5000ff)
-      .setTitle("📌 Post Verification Panel")
-      .setDescription("Select the channel to post the verification button in.")
-      .setFooter({ text: "Night Stars • NSV" }),
-    row: new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
-      new ChannelSelectMenuBuilder()
-        .setCustomId("deploy_verify_channel")
-        .setPlaceholder("Select a channel...")
-        .addChannelTypes(ChannelType.GuildText)
-        .setMinValues(1)
-        .setMaxValues(1)
-    ),
-  };
-}
 
 function buildAllCommandsEmbed() {
   return new EmbedBuilder()
@@ -226,9 +194,6 @@ export async function registerPanelCommands(client: Client) {
     .setDescription("Configure Night Stars bot systems")
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
     .addSubcommand((sub) =>
-      sub.setName("verification").setDescription("Set up the Night Stars Verification system (NSV)")
-    )
-    .addSubcommand((sub) =>
       sub.setName("pvs").setDescription("Set up the Private Voice System (PVS)")
     )
     .addSubcommand((sub) =>
@@ -302,8 +267,6 @@ export async function registerPanelCommands(client: Client) {
 
     if (interaction.isButton()) {
       const panelIds = [
-        "panel_deploy_verify",
-        "vp_save", "vp_reset", "vp_edit_questions", "vp_edit_embed", "vp_embed_back",
         "pp_save", "pp_reset",
         "cp_add_new", "cp_edit_game", "cp_remove_game", "cp_back_manage",
         "cp_open_details", "cp_save", "cp_reset",
@@ -335,10 +298,6 @@ export async function registerPanelCommands(client: Client) {
     if (interaction.isModalSubmit()) {
       if (interaction.customId === "cp_details_modal") {
         try { await handleCtpDetailsModalSubmit(interaction as ModalSubmitInteraction); } catch (err) { console.error("CTP modal error:", err); }
-      } else if (interaction.customId === "vp_questions_modal") {
-        try { await handleEditQuestionsSubmit(interaction as ModalSubmitInteraction); } catch (err) { console.error("NSV questions modal error:", err); }
-      } else if (interaction.customId === "vp_embed_modal") {
-        try { await handleEmbedCustomizeSubmit(interaction as ModalSubmitInteraction); } catch (err) { console.error("NSV embed modal error:", err); }
       }
     }
   });
@@ -357,9 +316,7 @@ async function handleSetupCommand(interaction: ChatInputCommandInteraction) {
 
   const sub = interaction.options.getSubcommand();
 
-  if (sub === "verification") {
-    await openVerifyPanel(interaction as unknown as ButtonInteraction);
-  } else if (sub === "pvs") {
+  if (sub === "pvs") {
     await openPvsPanel(interaction as unknown as ButtonInteraction);
   } else if (sub === "ping") {
     await openCtpManagePanel(interaction as unknown as ButtonInteraction);
@@ -371,20 +328,7 @@ async function handleSetupCommand(interaction: ChatInputCommandInteraction) {
 async function handleButtonInteraction(interaction: ButtonInteraction) {
   const { customId } = interaction;
   try {
-    if (customId === "panel_deploy_verify") {
-      const { embed, row } = buildDeployChannelSelect();
-      await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
-    } else if (customId === "vp_save") {
-      await handleVerifyPanelSave(interaction);
-    } else if (customId === "vp_reset") {
-      await handleVerifyPanelReset(interaction);
-    } else if (customId === "vp_edit_questions") {
-      await openEditQuestionsModal(interaction);
-    } else if (customId === "vp_edit_embed") {
-      await openEmbedCustomizeModal(interaction);
-    } else if (customId === "vp_embed_back") {
-      await handleEmbedPreviewBack(interaction);
-    } else if (customId === "pp_save") {
+    if (customId === "pp_save") {
       await handlePvsPanelSave(interaction);
     } else if (customId === "pp_reset") {
       await handlePvsPanelReset(interaction);
@@ -415,9 +359,7 @@ async function handleButtonInteraction(interaction: ButtonInteraction) {
 async function handleRoleSelectInteraction(interaction: RoleSelectMenuInteraction) {
   const { customId } = interaction;
   try {
-    if (customId.startsWith("vp_")) {
-      await handleVerifyPanelSelect(interaction);
-    } else if (customId.startsWith("pp_")) {
+    if (customId.startsWith("pp_")) {
       await handlePvsPanelSelect(interaction);
     } else if (customId.startsWith("cp_")) {
       await handleCtpPanelSelect(interaction);
@@ -432,27 +374,7 @@ async function handleRoleSelectInteraction(interaction: RoleSelectMenuInteractio
 async function handleChannelSelectInteraction(interaction: ChannelSelectMenuInteraction) {
   const { customId } = interaction;
   try {
-    if (customId === "deploy_verify_channel") {
-      const channelId = interaction.values[0];
-      const channel = interaction.guild!.channels.cache.get(channelId) as TextChannel | undefined;
-      if (!channel || channel.type !== ChannelType.GuildText) {
-        await interaction.reply({ content: "Invalid channel selected.", ephemeral: true });
-        return;
-      }
-      await deployVerificationPanel(channel);
-      await interaction.update({
-        embeds: [
-          new EmbedBuilder()
-            .setColor(0x5000ff)
-            .setTitle("✅ Verification Panel Posted")
-            .setDescription(`Panel posted in <#${channelId}>. Members will see the Start Verification button there.`)
-            .setFooter({ text: "Night Stars • NSV" }),
-        ],
-        components: [],
-      });
-    } else if (customId.startsWith("vp_")) {
-      await handleVerifyPanelSelect(interaction);
-    } else if (customId.startsWith("pp_")) {
+    if (customId.startsWith("pp_")) {
       await handlePvsPanelSelect(interaction);
     } else if (customId.startsWith("cp_")) {
       await handleCtpPanelSelect(interaction);
