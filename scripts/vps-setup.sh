@@ -1,51 +1,92 @@
 #!/bin/bash
 set -e
 
-echo "=== Night Stars Bot - VPS Setup ==="
+echo "=============================="
+echo "  Night Stars Bot - VPS Setup"
+echo "=============================="
 echo ""
 
-# Install Node.js 20 (LTS) if not present
-if ! command -v node &> /dev/null; then
-  echo "[1/6] Installing Node.js..."
-  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-  sudo apt-get install -y nodejs
-else
-  echo "[1/6] Node.js already installed: $(node -v)"
+read -p "Discord Token (Night Stars Bot): " -s NS_TOKEN && echo ""
+read -p "Database URL (Neon PostgreSQL): " -s DB_URL && echo ""
+read -p "Discord Token (Self Role Bot) [leave blank to skip]: " -s SR_TOKEN && echo ""
+echo ""
+
+echo "[1/5] Installing Node.js 20..."
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash - &>/dev/null
+apt-get install -y nodejs &>/dev/null
+echo "Done"
+
+echo "[2/5] Installing pnpm and PM2..."
+npm install -g pnpm pm2 &>/dev/null
+echo "Done"
+
+echo "[3/5] Cloning Night Stars Bot..."
+git clone https://github.com/mouadalexo/NS_BOT_SYSTEM /root/NS_BOT_SYSTEM
+cd /root/NS_BOT_SYSTEM
+pnpm install
+echo "Done"
+
+if [ -n "$SR_TOKEN" ]; then
+  echo "[3b] Cloning Self Role Bot..."
+  git clone https://github.com/mouadalexo/Night-Stars-self-role-bot /root/self-role-bot
+  cd /root/self-role-bot
+  npm install
+  echo "Done"
 fi
 
-# Install pnpm if not present
-if ! command -v pnpm &> /dev/null; then
-  echo "[2/6] Installing pnpm..."
-  npm install -g pnpm
-else
-  echo "[2/6] pnpm already installed: $(pnpm -v)"
+echo "[4/5] Creating PM2 config..."
+
+APPS="    {
+      name: \"night-stars-bot\",
+      script: \"pnpm\",
+      args: \"--filter @workspace/discord-bot run start\",
+      interpreter: \"none\",
+      cwd: \"/root/NS_BOT_SYSTEM\",
+      autorestart: true,
+      restart_delay: 5000,
+      max_restarts: 50,
+      watch: false,
+      env: {
+        NODE_ENV: \"production\",
+        DATABASE_URL: \"$DB_URL\",
+        DISCORD_TOKEN: \"$NS_TOKEN\"
+      }
+    }"
+
+if [ -n "$SR_TOKEN" ]; then
+  APPS="$APPS,
+    {
+      name: \"self-role-bot\",
+      script: \"index.js\",
+      cwd: \"/root/self-role-bot\",
+      autorestart: true,
+      restart_delay: 5000,
+      watch: false,
+      env: {
+        NODE_ENV: \"production\",
+        DISCORD_TOKEN: \"$SR_TOKEN\"
+      }
+    }"
 fi
 
-# Install PM2 if not present
-if ! command -v pm2 &> /dev/null; then
-  echo "[3/6] Installing PM2..."
-  npm install -g pm2
-else
-  echo "[3/6] PM2 already installed: $(pm2 -v)"
-fi
+cat > /root/NS_BOT_SYSTEM/ecosystem.prod.config.cjs << PMEOF
+module.exports = {
+  apps: [
+$APPS
+  ]
+};
+PMEOF
+echo "Done"
 
-# Install dependencies
-echo "[4/6] Installing dependencies..."
-pnpm install --frozen-lockfile
-
-# Apply database schema
-echo "[5/6] Applying database schema..."
-pnpm --filter @workspace/db run push
-
-# Start bot with PM2
-echo "[6/6] Starting bot with PM2..."
-pm2 start ecosystem.config.cjs
-
-# Save PM2 process list and enable startup
+echo "[5/5] Starting bots with PM2..."
+pm2 start /root/NS_BOT_SYSTEM/ecosystem.prod.config.cjs
 pm2 save
-pm2 startup | tail -1
+pm2 startup systemd -u root --hp /root | tail -1 | bash
+echo "Done"
 
 echo ""
-echo "=== Setup complete! ==="
-echo "Bot is running. Check status with: pm2 status"
-echo "View logs with: pm2 logs night-stars-bot"
+echo "=============================="
+echo "  All bots are running"
+echo "  pm2 list    - check status"
+echo "  pm2 logs    - see logs"
+echo "=============================="
