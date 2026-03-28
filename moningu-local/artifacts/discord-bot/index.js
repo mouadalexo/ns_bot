@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { hasManagerAccess } = require('./commands/owner.js');
-const { handlePanelInteraction } = require('./handlers/interactions.js');
+const { handlePanelInteraction, handleSuggestionModal } = require('./handlers/interactions.js');
 const {
   handleSetCommand,
   handleSetButton,
@@ -213,7 +213,11 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (interaction.isModalSubmit()) {
-      await handleSetModal(interaction, dynamicRoles, saveStorage);
+      if (interaction.customId.startsWith('suggest_modal:')) {
+        await handleSuggestionModal(interaction, dynamicRoles);
+      } else {
+        await handleSetModal(interaction, dynamicRoles, saveStorage);
+      }
       return;
     }
 

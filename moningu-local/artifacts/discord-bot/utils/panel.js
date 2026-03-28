@@ -67,7 +67,7 @@ async function buildPanel(dynamicRoles, guild) {
   // Select menus (one per category with options)
   const menuRows = [];
   for (const cat of categories) {
-    const options = (cat.options || []).filter(o => o.roleId).slice(0, 25);
+    const options = (cat.options || []).filter(o => o.roleId).slice(0, 24);
     if (options.length === 0) continue;
 
     const menuOptions = options.map(opt => {
@@ -91,6 +91,15 @@ async function buildPanel(dynamicRoles, guild) {
 
       return option;
     });
+
+    // Suggest option at the end of each category
+    menuOptions.push(
+      new StringSelectMenuOptionBuilder()
+        .setLabel('Suggest a role / game')
+        .setValue('__suggest__')
+        .setDescription('Have something in mind? Send a suggestion to the admins!')
+        .setEmoji('💡')
+    );
 
     const icon = getCategoryIcon(cat.id);
     const menu = new StringSelectMenuBuilder()
