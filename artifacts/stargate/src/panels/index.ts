@@ -227,6 +227,10 @@ async function handleButtonInteraction(interaction: ButtonInteraction) {
   } else if (customId === "panel_deploy_verify") {
     const { embed, row } = buildDeployChannelSelect();
     await interaction.update({ embeds: [embed], components: [row] });
+  } else if (customId === "ar_save") {
+    await handleAutoRoleSave(interaction);
+  } else if (customId === "ar_clear") {
+    await handleAutoRoleClear(interaction);
   }
 }
 

@@ -8,6 +8,7 @@ import {
 } from "discord.js";
 import { createServer } from "http";
 import { registerVerificationModule } from "./modules/verification/index.js";
+import { registerAutoRoleModule } from "./modules/autorole/index.js";
 import { registerPanelCommands } from "./panels/index.js";
 
 process.on("unhandledRejection", (reason) => {
@@ -58,6 +59,7 @@ if (!token) {
     } catch {}
 
     registerVerificationModule(client);
+    registerAutoRoleModule(client);
     await registerPanelCommands(client);
     console.log("[Stargate] All systems ready.");
   });
