@@ -18,7 +18,9 @@ const MAX_CATEGORIES = 5;
 const MAX_OPTIONS = 20;
 
 // ─── In-memory store for emoji picker flow ───────────────────────────────────
-const pendingOptions = new Map(); // `${userId}:${catId}` → { label, roleId }
+const pendingOptions   = new Map(); // `${userId}:${catId}` → { label, roleId, emoji? }
+const pendingEmojiEdit = new Map(); // `${userId}:${catId}:${optIndex}` → emoji
+const pendingCatIcon   = new Map(); // `${userId}:${catId}` → emoji
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -264,7 +266,7 @@ function categoryEditorRows(catId, cat) {
 // ─── Server emoji picker builder ─────────────────────────────────────────────
 
 function buildEmojiPickerComponents(catId, guild) {
-  const guildEmojis = [...guild.emojis.cache.values()].slice(0, 24);
+  const guildEmojis = [...guild.emojis.cache.values()].sort((a, b) => (b.id > a.id ? 1 : -1)).slice(0, 24);
 
   const options = [
     new StringSelectMenuOptionBuilder()
@@ -297,7 +299,7 @@ function buildEmojiPickerComponents(catId, guild) {
 const PER_PAGE = 24; // 1 slot reserved for "No Emoji"
 
 function buildEditEmojiPickerRows(catId, optIndex, guild, page) {
-  const allEmojis = [...guild.emojis.cache.values()];
+  const allEmojis = [...guild.emojis.cache.values()].sort((a, b) => (b.id > a.id ? 1 : -1));
   const totalPages = Math.max(1, Math.ceil(allEmojis.length / PER_PAGE));
   const safePageNum = Math.min(Math.max(page, 0), totalPages - 1);
   const pageEmojis = allEmojis.slice(safePageNum * PER_PAGE, (safePageNum + 1) * PER_PAGE);
@@ -349,7 +351,7 @@ function buildEditEmojiPickerRows(catId, optIndex, guild, page) {
 // ─── Paged emoji picker for category icon ────────────────────────────────────
 
 function buildCatIconPickerRows(catId, guild, page) {
-  const allEmojis = [...guild.emojis.cache.values()];
+  const allEmojis = [...guild.emojis.cache.values()].sort((a, b) => (b.id > a.id ? 1 : -1));
   const totalPages = Math.max(1, Math.ceil(allEmojis.length / PER_PAGE));
   const safePageNum = Math.min(Math.max(page, 0), totalPages - 1);
   const pageEmojis = allEmojis.slice(safePageNum * PER_PAGE, (safePageNum + 1) * PER_PAGE);
@@ -1074,6 +1076,148 @@ async function handleSetButton(interaction, dynamicRoles, saveStorage) {
     return;
   }
 
+  // ── Confirm add new option ──
+  if (id.startsWith('set_confirm_add:')) {
+    const catId = id.slice('set_confirm_add:'.length);
+    const cat = categories.find(c => c.id === catId);
+    const key = `${interaction.user.id}:${catId}`;
+    const pending = pendingOptions.get(key);
+
+    if (!pending) {
+      await interaction.update({
+        embeds: [categoryEditorEmbed(cat, '❌ Session expired. Please try adding the option again.')],
+        components: categoryEditorRows(catId, cat),
+      });
+      return;
+    }
+
+    pendingOptions.delete(key);
+    cat.options.push({ label: pending.label, emoji: pending.emoji ?? null, roleId: pending.roleId });
+    saveStorage();
+
+    const note = `✅ Added **${pending.label}** ${displayEmoji(pending.emoji) || ''} (ID: \`${pending.roleId}\`)`.trim();
+    await interaction.update({
+      embeds: [categoryEditorEmbed(cat, note)],
+      components: categoryEditorRows(catId, cat),
+    });
+    return;
+  }
+
+  // ── Retry emoji for new option ──
+  if (id.startsWith('set_retry_emoji:')) {
+    const catId = id.slice('set_retry_emoji:'.length);
+    const key = `${interaction.user.id}:${catId}`;
+    const pending = pendingOptions.get(key);
+    const cat = categories.find(c => c.id === catId);
+
+    if (!pending) {
+      await interaction.update({
+        embeds: [categoryEditorEmbed(cat, '❌ Session expired. Please try adding the option again.')],
+        components: categoryEditorRows(catId, cat),
+      });
+      return;
+    }
+
+    await interaction.guild.emojis.fetch().catch(() => {});
+    await interaction.update({
+      embeds: [new EmbedBuilder()
+        .setTitle('🎨 Pick an Emoji')
+        .setDescription(`Choose a **server emoji** for **${pending.label}**.\nSelect **"No Emoji"** to skip.`)
+        .setColor(0x5865F2)],
+      components: buildEmojiPickerComponents(catId, interaction.guild),
+    });
+    return;
+  }
+
+  // ── Confirm emoji edit on existing option ──
+  if (id.startsWith('set_confirm_emoji_edit:')) {
+    const rest = id.slice('set_confirm_emoji_edit:'.length);
+    const lastColon = rest.lastIndexOf(':');
+    const catId = rest.slice(0, lastColon);
+    const optIndex = parseInt(rest.slice(lastColon + 1));
+    const cat = categories.find(c => c.id === catId);
+    const opt = cat?.options[optIndex];
+    const key = `${interaction.user.id}:${catId}:${optIndex}`;
+    const emoji = pendingEmojiEdit.has(key) ? pendingEmojiEdit.get(key) : undefined;
+
+    if (!opt) {
+      await interaction.update({
+        embeds: [categoryEditorEmbed(cat, '❌ Option not found.')],
+        components: categoryEditorRows(catId, cat),
+      });
+      return;
+    }
+
+    pendingEmojiEdit.delete(key);
+    opt.emoji = emoji ?? null;
+    saveStorage();
+
+    const note = `✅ Emoji for **${opt.label}** updated to ${displayEmoji(opt.emoji) || '_none_'}.`.trim();
+    await interaction.update({
+      embeds: [categoryEditorEmbed(cat, note)],
+      components: categoryEditorRows(catId, cat),
+    });
+    return;
+  }
+
+  // ── Retry emoji pick for existing option ──
+  if (id.startsWith('set_retry_emoji_edit:')) {
+    const rest = id.slice('set_retry_emoji_edit:'.length);
+    const parts = rest.split(':');
+    const page = parseInt(parts.pop());
+    const optIndex = parseInt(parts.pop());
+    const catId = parts.join(':');
+    const cat = categories.find(c => c.id === catId);
+    const opt = cat?.options[optIndex];
+
+    await interaction.guild.emojis.fetch().catch(() => {});
+    await interaction.update({
+      embeds: [new EmbedBuilder()
+        .setTitle(`🎨 Change Emoji — ${opt?.label ?? '?'}`)
+        .setDescription('Pick a server emoji from the list, or select **"No Emoji"** to remove it.')
+        .setColor(0x5865F2)],
+      components: buildEditEmojiPickerRows(catId, optIndex, interaction.guild, page),
+    });
+    return;
+  }
+
+  // ── Confirm category icon ──
+  if (id.startsWith('set_confirm_cat_icon:')) {
+    const catId = id.slice('set_confirm_cat_icon:'.length);
+    const cat = categories.find(c => c.id === catId);
+    const key = `${interaction.user.id}:${catId}`;
+    const icon = pendingCatIcon.has(key) ? pendingCatIcon.get(key) : undefined;
+
+    pendingCatIcon.delete(key);
+    cat.icon = icon ?? null;
+    saveStorage();
+
+    const note = cat.icon
+      ? `✅ Category icon set to ${displayEmoji(cat.icon)}.`
+      : `✅ Category icon reset to default.`;
+    await interaction.update({
+      embeds: [categoryEditorEmbed(cat, note)],
+      components: categoryEditorRows(catId, cat),
+    });
+    return;
+  }
+
+  // ── Retry category icon ──
+  if (id.startsWith('set_retry_cat_icon:')) {
+    const catId = id.slice('set_retry_cat_icon:'.length);
+    const cat = categories.find(c => c.id === catId);
+
+    await interaction.guild.emojis.fetch().catch(() => {});
+    await interaction.update({
+      embeds: [new EmbedBuilder()
+        .setTitle(`🖼️ Category Icon — ${cat.name}`)
+        .setDescription('Pick a server emoji to use as the icon for this category.\nSelect **"No Icon"** to reset to the default.')
+        .setColor(0x5865F2)],
+      components: buildCatIconPickerRows(catId, interaction.guild, 0),
+    });
+    return;
+  }
+
   // ── Back to category editor ──
   if (id.startsWith('set_back_edit:')) {
     const catId = id.slice('set_back_edit:'.length);
@@ -1231,7 +1375,7 @@ async function handleSetSelect(interaction, dynamicRoles, saveStorage) {
     return;
   }
 
-  // ── Emoji picked for existing option (edit flow) ──
+  // ── Emoji picked for existing option (edit flow — confirm step) ──
   if (id.startsWith('set_pick_emoji_edit:')) {
     const rest = id.slice('set_pick_emoji_edit:'.length);
     const parts = rest.split(':');
@@ -1251,18 +1395,40 @@ async function handleSetSelect(interaction, dynamicRoles, saveStorage) {
 
     const selected = interaction.values[0];
     const emoji = selected === 'none' ? null : parseEmoji(selected);
-    opt.emoji = emoji;
-    saveStorage();
+    const key = `${interaction.user.id}:${catId}:${optIndex}`;
+    pendingEmojiEdit.set(key, emoji);
 
-    const note = `✅ Emoji for **${opt.label}** updated to ${displayEmoji(emoji) || '_none_'}.`.trim();
+    const preview = emoji ? displayEmoji(emoji) : '_No emoji_';
+
     await interaction.update({
-      embeds: [categoryEditorEmbed(cat, note)],
-      components: categoryEditorRows(catId, cat),
+      embeds: [new EmbedBuilder()
+        .setTitle(`💾 Confirm Emoji — ${opt.label}`)
+        .setDescription(
+          `**New emoji:** ${preview}\n\n` +
+          `Click **Save** to apply, or **Change** to pick a different one.`
+        )
+        .setColor(0x57F287)],
+      components: [
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`set_confirm_emoji_edit:${catId}:${optIndex}`)
+            .setLabel('💾 Save')
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
+            .setCustomId(`set_retry_emoji_edit:${catId}:${optIndex}:0`)
+            .setLabel('↩️ Change')
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setCustomId(`set_back_edit:${catId}`)
+            .setLabel('✕ Cancel')
+            .setStyle(ButtonStyle.Danger),
+        ),
+      ],
     });
     return;
   }
 
-  // ── Category icon picked ──
+  // ── Category icon picked (confirm step) ──
   if (id.startsWith('set_pick_cat_icon:')) {
     const rest = id.slice('set_pick_cat_icon:'.length);
     const lastColon = rest.lastIndexOf(':');
@@ -1271,21 +1437,40 @@ async function handleSetSelect(interaction, dynamicRoles, saveStorage) {
 
     const selected = interaction.values[0];
     const icon = selected === 'none' ? null : parseEmoji(selected);
-    cat.icon = icon;
-    saveStorage();
+    const key = `${interaction.user.id}:${catId}`;
+    pendingCatIcon.set(key, icon);
 
-    const note = icon
-      ? `✅ Category icon set to ${displayEmoji(icon)}.`
-      : `✅ Category icon reset to default.`;
+    const preview = icon ? displayEmoji(icon) : '_No icon (use default)_';
 
     await interaction.update({
-      embeds: [categoryEditorEmbed(cat, note)],
-      components: categoryEditorRows(catId, cat),
+      embeds: [new EmbedBuilder()
+        .setTitle(`💾 Confirm Icon — ${cat.name}`)
+        .setDescription(
+          `**New icon:** ${preview}\n\n` +
+          `Click **Save** to apply, or **Change** to pick a different one.`
+        )
+        .setColor(0x57F287)],
+      components: [
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`set_confirm_cat_icon:${catId}`)
+            .setLabel('💾 Save')
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
+            .setCustomId(`set_retry_cat_icon:${catId}`)
+            .setLabel('↩️ Change')
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setCustomId(`set_back_edit:${catId}`)
+            .setLabel('✕ Cancel')
+            .setStyle(ButtonStyle.Danger),
+        ),
+      ],
     });
     return;
   }
 
-  // ── Emoji picker — user selected a server emoji ──
+  // ── Emoji picker — user selected a server emoji (confirm step) ──
   if (id.startsWith('set_pick_emoji:')) {
     const catId = id.slice('set_pick_emoji:'.length);
     const cat = categories.find(c => c.id === catId);
@@ -1302,16 +1487,36 @@ async function handleSetSelect(interaction, dynamicRoles, saveStorage) {
 
     const selected = interaction.values[0];
     const emoji = selected === 'none' ? null : parseEmoji(selected);
+    pending.emoji = emoji; // store for confirm step
 
-    pendingOptions.delete(key);
-    cat.options.push({ label: pending.label, emoji, roleId: pending.roleId });
-    saveStorage();
-
-    const note = `✅ Added **${pending.label}** ${displayEmoji(emoji)} (ID: \`${pending.roleId}\`)`.trim();
+    const preview = emoji ? displayEmoji(emoji) : '_No emoji_';
 
     await interaction.update({
-      embeds: [categoryEditorEmbed(cat, note)],
-      components: categoryEditorRows(catId, cat),
+      embeds: [new EmbedBuilder()
+        .setTitle('💾 Confirm New Option')
+        .setDescription(
+          `**Label:** ${pending.label}\n` +
+          `**Emoji:** ${preview}\n` +
+          `**Role ID:** \`${pending.roleId}\`\n\n` +
+          `Click **Save** to confirm, or **Change Emoji** to pick a different one.`
+        )
+        .setColor(0x57F287)],
+      components: [
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`set_confirm_add:${catId}`)
+            .setLabel('💾 Save')
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
+            .setCustomId(`set_retry_emoji:${catId}`)
+            .setLabel('↩️ Change Emoji')
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setCustomId(`set_back_edit:${catId}`)
+            .setLabel('✕ Cancel')
+            .setStyle(ButtonStyle.Danger),
+        ),
+      ],
     });
     return;
   }
