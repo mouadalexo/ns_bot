@@ -379,13 +379,19 @@ async function handleVerificationAction(interaction: ButtonInteraction) {
   const config = await getConfig(guildId);
   if (!config) return;
 
-  const guildMember = interaction.member;
-  const memberRoles = guildMember?.roles;
-  const roleSet = Array.isArray(memberRoles) ? memberRoles : (memberRoles as any)?.cache;
+  const isAdmin = interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator) ?? false;
 
-  const hasVerificatorRole = config.verificatorsRoleId && roleSet?.has(config.verificatorsRoleId);
-  const hasStaffRole = config.staffRoleId && roleSet?.has(config.staffRoleId);
-  if (!hasVerificatorRole && !hasStaffRole) {
+  const memberRoles = interaction.member?.roles;
+  const hasRole = (roleId: string): boolean => {
+    if (!roleId) return false;
+    if (Array.isArray(memberRoles)) return memberRoles.includes(roleId);
+    return (memberRoles as any)?.cache?.has(roleId) ?? false;
+  };
+
+  const hasVerificatorRole = config.verificatorsRoleId ? hasRole(config.verificatorsRoleId) : false;
+  const hasStaffRole = config.staffRoleId ? hasRole(config.staffRoleId) : false;
+
+  if (!isAdmin && !hasVerificatorRole && !hasStaffRole) {
     await interaction.followUp({
       content: "You do not have permission to use these buttons.",
       ephemeral: true,
