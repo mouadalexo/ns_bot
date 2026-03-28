@@ -19,13 +19,20 @@ const CATEGORY_ICONS = {
   status:       '💬',
 };
 
-function getCategoryIcon(cat) {
+async function getCategoryIcon(guild, cat) {
   if (cat.icon) {
-    // custom emoji object → placeholders don't render <:name:id> format
-    // so use emoji name (which shows as text) or fallback to unicode
+    // custom emoji object → fetch from guild to get proper rendering
     if (typeof cat.icon === 'object') {
-      return cat.icon.name || '❓';
+      try {
+        const emoji = await guild.emojis.fetch(cat.icon.id);
+        // toString() gives <:name:id> format which Discord can render
+        return emoji.toString();
+      } catch {
+        // If fetch fails, fall back to emoji name
+        return cat.icon.name || '❓';
+      }
     }
+    // unicode emoji or string
     return cat.icon;
   }
   return CATEGORY_ICONS[cat.id] || '🎭';
@@ -123,7 +130,7 @@ async function buildPanel(dynamicRoles, guild) {
         .setEmoji('💡')
     );
 
-    const icon = getCategoryIcon(cat);
+    const icon = await getCategoryIcon(guild, cat);
     const menu = new StringSelectMenuBuilder()
       .setCustomId(`cat:${cat.id}`)
       .setPlaceholder(`${icon}  ${cat.placeholder || cat.name}`)
