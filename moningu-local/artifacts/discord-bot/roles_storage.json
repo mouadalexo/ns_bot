@@ -1,0 +1,221 @@
+{
+  "categories": [
+    {
+      "id": "mobile_games",
+      "name": "MOBILE GAMES",
+      "placeholder": "Select a Mobile Game...",
+      "options": [
+        {
+          "label": "Among Us",
+          "emoji": "🕵️",
+          "roleId": "1486591026155098162"
+        },
+        {
+          "label": "eFootball Mobile",
+          "emoji": "⚽",
+          "roleId": "1486591026985697322"
+        },
+        {
+          "label": "PUBG Mobile",
+          "emoji": "🎯",
+          "roleId": "1486591027983945869"
+        },
+        {
+          "label": "Free Fire",
+          "emoji": "🔥",
+          "roleId": "1486591028659093565"
+        },
+        {
+          "label": "Mobile Legends",
+          "emoji": "⚔️",
+          "roleId": "1486591029112078366"
+        },
+        {
+          "label": "Call of Duty Mobile",
+          "emoji": "🔫",
+          "roleId": "1486591029586165880"
+        },
+        {
+          "label": "Clash of Clans",
+          "emoji": "🏰",
+          "roleId": "1486591030265647184"
+        },
+        {
+          "label": "Clash Royale",
+          "emoji": "👑",
+          "roleId": "1486591031289053345"
+        },
+        {
+          "label": "Candy Crush",
+          "emoji": "🍭",
+          "roleId": "1486591031913742357"
+        },
+        {
+          "label": "Subway Surfers",
+          "emoji": "🛹",
+          "roleId": "1486591032236838914"
+        },
+        {
+          "label": "Roblox Mobile",
+          "emoji": "🟥",
+          "roleId": "1486591032975036579"
+        },
+        {
+          "label": "Minecraft Mobile",
+          "emoji": "⛏️",
+          "roleId": "1486591033361043588"
+        },
+        {
+          "label": "Brawl Stars",
+          "emoji": "⭐",
+          "roleId": "1486591033830805514"
+        },
+        {
+          "label": "Pokemon GO",
+          "emoji": "🐾",
+          "roleId": "1486591034480656435"
+        },
+        {
+          "label": "Honor of Kings",
+          "emoji": "👑",
+          "roleId": "1486591035021983945"
+        }
+      ],
+      "roleLimit": 5
+    },
+    {
+      "id": "pc_games",
+      "name": "PC GAMES",
+      "placeholder": "Select a PC Game...",
+      "options": [
+        {
+          "label": "Valorant",
+          "emoji": "🔫",
+          "roleId": "1486591035390824468"
+        },
+        {
+          "label": "League of Legends",
+          "emoji": "⚔️",
+          "roleId": "1486591035391086703"
+        },
+        {
+          "label": "Minecraft",
+          "emoji": "⛏️",
+          "roleId": "1486591036112240811"
+        },
+        {
+          "label": "Counter-Strike 2",
+          "emoji": "💣",
+          "roleId": "1486591037110751342"
+        },
+        {
+          "label": "Fortnite",
+          "emoji": "🏗️",
+          "roleId": "1486591037706080307"
+        },
+        {
+          "label": "GTA V",
+          "emoji": "🚗",
+          "roleId": "1486591038155132938"
+        },
+        {
+          "label": "Apex Legends",
+          "emoji": "🎯",
+          "roleId": "1486591038549397524"
+        },
+        {
+          "label": "Dota 2",
+          "emoji": "🗡️",
+          "roleId": "1486591038972891267"
+        },
+        {
+          "label": "World of Warcraft",
+          "emoji": "🧙",
+          "roleId": "1486591039526404138"
+        },
+        {
+          "label": "Overwatch 2",
+          "emoji": "🦸",
+          "roleId": "1486591040302354455"
+        },
+        {
+          "label": "Elden Ring",
+          "emoji": "💀",
+          "roleId": "1486591041451720714"
+        },
+        {
+          "label": "Cyberpunk 2077",
+          "emoji": "🤖",
+          "roleId": "1486591042093322340"
+        },
+        {
+          "label": "The Sims 4",
+          "emoji": "🏠",
+          "roleId": "1486591042865205380"
+        },
+        {
+          "label": "EA FC 25",
+          "emoji": "⚽",
+          "roleId": "1486591043221590028"
+        },
+        {
+          "label": "Roblox",
+          "emoji": "🟥",
+          "roleId": "1486591043963977879"
+        }
+      ]
+    },
+    {
+      "id": "about_you",
+      "name": "ABOUT YOU",
+      "placeholder": "Tell us about you...",
+      "options": [
+        {
+          "label": "3NIBA",
+          "emoji": "🍇",
+          "roleId": "1486605950763929750"
+        },
+        {
+          "label": "MOTA3ASIB",
+          "emoji": "😡",
+          "roleId": "1486778543684714729"
+        },
+        {
+          "label": "toxic",
+          "emoji": null,
+          "roleId": "1486809709510922332"
+        }
+      ]
+    },
+    {
+      "id": "status",
+      "name": "STATUS",
+      "placeholder": "Select your status...",
+      "options": [
+        {
+          "label": "Taken",
+          "emoji": "💑",
+          "roleId": "1486591044442390670"
+        },
+        {
+          "label": "Single",
+          "emoji": "🧍",
+          "roleId": "1486591044874407977"
+        },
+        {
+          "label": "Married",
+          "emoji": "💍",
+          "roleId": "1486591045302222960"
+        },
+        {
+          "label": "Complicated",
+          "emoji": "😅",
+          "roleId": "1486591045830447115"
+        }
+      ]
+    }
+  ],
+  "logChannelId": null,
+  "requiredRoleId": null,
+  "managerRoleId": null
+}
