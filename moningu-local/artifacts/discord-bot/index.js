@@ -175,7 +175,7 @@ client.once('clientReady', async () => {
   ];
 
   try {
-    const rest = new REST().setToken(process.env.DISCORD_TOKEN);
+    const rest = new REST().setToken(process.env.MONINGU_TOKEN || process.env.DISCORD_TOKEN);
 
     if (guildId) {
       await rest.put(Routes.applicationGuildCommands(client.user.id, guildId), { body: commands });
