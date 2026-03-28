@@ -15,7 +15,7 @@ import {
   PermissionsBitField,
 } from "discord.js";
 import { db } from "@workspace/db";
-import { botConfigTable, verificationSessionsTable } from "@workspace/db";
+import { botConfigTable, verificationSessionsTable, memberLeavesTable } from "@workspace/db";
 import { eq, and, count } from "drizzle-orm";
 import { isMainGuild } from "../../utils/guildFilter.js";
 
@@ -101,12 +101,13 @@ function buildRequestEmbed(
   joinedAt: number | null,
   answers: string[],
   questions: string[],
-  applicationNumber: number
+  applicationNumber: number,
+  hasLeftBefore: boolean
 ) {
   const embed = new EmbedBuilder()
-    .setColor(COLOR_PENDING)
+    .setColor(hasLeftBefore ? 0xff9900 : COLOR_PENDING)
     .setAuthor({ name: `Application #${applicationNumber}`, iconURL: memberAvatarUrl ?? undefined })
-    .setTitle("🔔 New Verification Request")
+    .setTitle(hasLeftBefore ? "🔔 New Verification Request ⚠️" : "🔔 New Verification Request")
     .addFields(
       {
         name: "👤 Member",
@@ -128,6 +129,11 @@ function buildRequestEmbed(
         value: joinedAt ? `<t:${Math.floor(joinedAt / 1000)}:R>` : "_Unknown_",
         inline: true,
       },
+      ...(hasLeftBefore ? [{
+        name: "⚠️ Rejoined",
+        value: "This member was in the server before and left.",
+        inline: false,
+      }] : []),
       { name: "\u200B", value: "**─── Answers ───**", inline: false },
       ...questions.map((q, i) => ({
         name: `${i + 1}. ${q}`,
@@ -239,6 +245,17 @@ export async function deployVerificationPanel(channel: TextChannel) {
 }
 
 export function registerVerificationModule(client: Client) {
+  // ── Track member leaves for rejoin detection ──────────────────────────────
+  client.on("guildMemberRemove", async (member) => {
+    if (!isMainGuild(member.guild.id)) return;
+    try {
+      await db.insert(memberLeavesTable).values({
+        guildId: member.guild.id,
+        memberId: member.id,
+      });
+    } catch {}
+  });
+
   client.on("interactionCreate", async (interaction) => {
     if (!interaction.guild) return;
     if (!isMainGuild(interaction.guild.id)) return;
@@ -354,6 +371,19 @@ async function handleVerificationSubmit(interaction: ModalSubmitInteraction) {
   const avatarUrl = user.displayAvatarURL({ size: 128 });
   const joinedAt = (interaction.member as import("discord.js").GuildMember)?.joinedTimestamp ?? null;
 
+  // Check if member has left the server before
+  const leaveRecord = await db
+    .select({ id: memberLeavesTable.id })
+    .from(memberLeavesTable)
+    .where(
+      and(
+        eq(memberLeavesTable.guildId, guildId),
+        eq(memberLeavesTable.memberId, user.id)
+      )
+    )
+    .limit(1);
+  const hasLeftBefore = leaveRecord.length > 0;
+
   const requestEmbed = buildRequestEmbed(
     user.id,
     user.username,
@@ -362,7 +392,8 @@ async function handleVerificationSubmit(interaction: ModalSubmitInteraction) {
     joinedAt,
     answers,
     questions,
-    applicationNumber
+    applicationNumber,
+    hasLeftBefore
   );
 
   await requestsChannel.send({

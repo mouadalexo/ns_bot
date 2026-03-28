@@ -30,6 +30,12 @@ import {
   handleEmbedPreviewBack,
 } from "./verification.js";
 import { deployVerificationPanel } from "../modules/verification/index.js";
+import {
+  openAutoRolePanel,
+  handleAutoRoleSelect,
+  handleAutoRoleSave,
+  handleAutoRoleClear,
+} from "./autorole.js";
 
 function buildDeployChannelSelect() {
   return {
@@ -98,6 +104,9 @@ export async function registerPanelCommands(client: Client) {
     .addSubcommand((sub) =>
       sub.setName("verification").setDescription("Set up the Night Stars Verification system (NSV)")
     )
+    .addSubcommand((sub) =>
+      sub.setName("autorole").setDescription("Set roles to auto-assign when a member or bot joins")
+    )
     .toJSON();
 
   const helpCommand = new SlashCommandBuilder()
@@ -148,6 +157,8 @@ export async function registerPanelCommands(client: Client) {
         await interaction.deferReply({ ephemeral: true });
         if (sub === "verification") {
           await openVerifyPanel(interaction as unknown as ButtonInteraction);
+        } else if (sub === "autorole") {
+          await openAutoRolePanel(interaction as unknown as ButtonInteraction);
         }
       }
 
@@ -164,6 +175,7 @@ export async function registerPanelCommands(client: Client) {
       const panelIds = [
         "panel_deploy_verify",
         "vp_save", "vp_reset", "vp_edit_questions", "vp_edit_embed", "vp_embed_back",
+        "ar_save", "ar_clear",
       ];
       if (panelIds.includes(interaction.customId)) {
         await handleButtonInteraction(interaction as ButtonInteraction);
@@ -172,9 +184,10 @@ export async function registerPanelCommands(client: Client) {
     }
 
     if (interaction.isRoleSelectMenu()) {
-      const roleIds = ["vp_verificators_role", "vp_roles_group"];
-      if (roleIds.includes(interaction.customId)) {
+      if (["vp_verificators_role", "vp_roles_group"].includes(interaction.customId)) {
         await handleVerifyPanelSelect(interaction as RoleSelectMenuInteraction);
+      } else if (["ar_member_role", "ar_bot_role"].includes(interaction.customId)) {
+        await handleAutoRoleSelect(interaction as RoleSelectMenuInteraction);
       }
       return;
     }
