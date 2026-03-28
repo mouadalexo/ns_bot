@@ -20,8 +20,8 @@ import { eq } from "drizzle-orm";
 
 interface VerifyPanelState {
   verificatorsRoleId?: string;
+  requestsChannelId?: string;
   logsChannelId?: string;
-  verifyCategoryId?: string;
   assistCategoryId?: string;
   verifiedRoleId?: string;
   unverifiedRoleId?: string;
@@ -43,11 +43,11 @@ const DEFAULT_QUESTIONS = [
 function buildVerifyPanelEmbed(state: VerifyPanelState) {
   const lines = [
     `**Verificators Role** — ${state.verificatorsRoleId ? `<@&${state.verificatorsRoleId}>` : "not set"}`,
+    `**Requests Channel** — ${state.requestsChannelId ? `<#${state.requestsChannelId}>` : "not set"}`,
     `**Logs Channel** — ${state.logsChannelId ? `<#${state.logsChannelId}>` : "not set"}`,
     `**Verified Role** — ${state.verifiedRoleId ? `<@&${state.verifiedRoleId}>` : "not set"}`,
     `**Unverified Role** — ${state.unverifiedRoleId ? `<@&${state.unverifiedRoleId}>` : "not set"}`,
     `**Jail Role** — ${state.jailRoleId ? `<@&${state.jailRoleId}>` : "not set"}`,
-    `**Verify Category** — ${state.verifyCategoryId ? `<#${state.verifyCategoryId}>` : "not set"}`,
   ];
 
   return new EmbedBuilder()
@@ -58,7 +58,7 @@ function buildVerifyPanelEmbed(state: VerifyPanelState) {
 }
 
 function buildVerifyPanelComponents(state: VerifyPanelState) {
-  const canSave = !!(state.verificatorsRoleId && state.logsChannelId);
+  const canSave = !!(state.verificatorsRoleId && state.requestsChannelId);
 
   const row1 = new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(
     new RoleSelectMenuBuilder()
@@ -69,8 +69,8 @@ function buildVerifyPanelComponents(state: VerifyPanelState) {
 
   const row2 = new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
     new ChannelSelectMenuBuilder()
-      .setCustomId("vp_logs_channel")
-      .setPlaceholder(state.logsChannelId ? "Logs Channel (set)" : "Logs Channel...")
+      .setCustomId("vp_requests_channel")
+      .setPlaceholder(state.requestsChannelId ? "Requests Channel (set)" : "Requests Channel (where apps arrive)...")
       .addChannelTypes(ChannelType.GuildText)
       .setMinValues(1).setMaxValues(1)
   );
@@ -88,9 +88,9 @@ function buildVerifyPanelComponents(state: VerifyPanelState) {
 
   const row4 = new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
     new ChannelSelectMenuBuilder()
-      .setCustomId("vp_verify_category")
-      .setPlaceholder(state.verifyCategoryId ? "Verify Category (set)" : "Verify Category (optional)...")
-      .addChannelTypes(ChannelType.GuildCategory)
+      .setCustomId("vp_logs_channel")
+      .setPlaceholder(state.logsChannelId ? "Logs Channel (set)" : "Logs Channel (outcomes, optional)...")
+      .addChannelTypes(ChannelType.GuildText)
       .setMinValues(0).setMaxValues(1)
   );
 
@@ -133,8 +133,8 @@ export async function openVerifyPanel(interaction: ButtonInteraction) {
   const existing = config[0];
   const state: VerifyPanelState = {
     verificatorsRoleId: existing?.verificatorsRoleId ?? undefined,
+    requestsChannelId: existing?.verificationRequestsChannelId ?? existing?.verificationLogsChannelId ?? undefined,
     logsChannelId: existing?.verificationLogsChannelId ?? undefined,
-    verifyCategoryId: existing?.verificationCategoryId ?? undefined,
     assistCategoryId: existing?.assistanceCategoryId ?? undefined,
     verifiedRoleId: existing?.verifiedRoleId ?? undefined,
     unverifiedRoleId: existing?.unverifiedRoleId ?? undefined,
@@ -328,11 +328,10 @@ export async function handleVerifyPanelSelect(
 
   if (interaction.customId === "vp_verificators_role") {
     state.verificatorsRoleId = (interaction as RoleSelectMenuInteraction).values[0];
+  } else if (interaction.customId === "vp_requests_channel") {
+    state.requestsChannelId = (interaction as ChannelSelectMenuInteraction).values[0];
   } else if (interaction.customId === "vp_logs_channel") {
-    state.logsChannelId = (interaction as ChannelSelectMenuInteraction).values[0];
-  } else if (interaction.customId === "vp_verify_category") {
-    state.verifyCategoryId = (interaction as ChannelSelectMenuInteraction).values[0] ?? undefined;
-    state.assistCategoryId = (interaction as ChannelSelectMenuInteraction).values[0] ?? undefined;
+    state.logsChannelId = (interaction as ChannelSelectMenuInteraction).values[0] ?? undefined;
   } else if (interaction.customId === "vp_roles_group") {
     const values = (interaction as RoleSelectMenuInteraction).values;
     if (values.length >= 1) state.verifiedRoleId = values[0];
@@ -352,9 +351,9 @@ export async function handleVerifyPanelSave(interaction: ButtonInteraction) {
   const userId = interaction.user.id;
   const state = verifyPanelState.get(userId) ?? {};
 
-  if (!state.verificatorsRoleId || !state.logsChannelId) {
+  if (!state.verificatorsRoleId || !state.requestsChannelId) {
     await interaction.reply({
-      embeds: [new EmbedBuilder().setColor(0x5000ff).setDescription("Verificators Role and Logs Channel are required.")],
+      embeds: [new EmbedBuilder().setColor(0x5000ff).setDescription("Verificators Role and Requests Channel are required.")],
       ephemeral: true,
     });
     return;
@@ -366,8 +365,8 @@ export async function handleVerifyPanelSave(interaction: ButtonInteraction) {
   if (existing.length) {
     await db.update(botConfigTable).set({
       verificatorsRoleId: state.verificatorsRoleId,
-      verificationLogsChannelId: state.logsChannelId,
-      verificationCategoryId: state.verifyCategoryId ?? null,
+      verificationRequestsChannelId: state.requestsChannelId,
+      verificationLogsChannelId: state.logsChannelId ?? null,
       assistanceCategoryId: state.assistCategoryId ?? null,
       verifiedRoleId: state.verifiedRoleId ?? null,
       unverifiedRoleId: state.unverifiedRoleId ?? null,
@@ -378,8 +377,8 @@ export async function handleVerifyPanelSave(interaction: ButtonInteraction) {
     await db.insert(botConfigTable).values({
       guildId,
       verificatorsRoleId: state.verificatorsRoleId,
-      verificationLogsChannelId: state.logsChannelId,
-      verificationCategoryId: state.verifyCategoryId ?? null,
+      verificationRequestsChannelId: state.requestsChannelId,
+      verificationLogsChannelId: state.logsChannelId ?? null,
       assistanceCategoryId: state.assistCategoryId ?? null,
       verifiedRoleId: state.verifiedRoleId ?? null,
       unverifiedRoleId: state.unverifiedRoleId ?? null,
@@ -392,12 +391,13 @@ export async function handleVerifyPanelSave(interaction: ButtonInteraction) {
   await interaction.update({
     embeds: [
       new EmbedBuilder()
-        .setColor(0x5000ff)
-        .setTitle("NSV Saved")
+        .setColor(0x57f287)
+        .setTitle("✅ NSV Saved")
         .setDescription(
           [
             `**Verificators Role** — <@&${state.verificatorsRoleId}>`,
-            `**Logs Channel** — <#${state.logsChannelId}>`,
+            `**Requests Channel** — <#${state.requestsChannelId}>`,
+            `**Logs Channel** — ${state.logsChannelId ? `<#${state.logsChannelId}>` : "not set"}`,
             `**Verified Role** — ${state.verifiedRoleId ? `<@&${state.verifiedRoleId}>` : "not set"}`,
             `**Unverified Role** — ${state.unverifiedRoleId ? `<@&${state.unverifiedRoleId}>` : "not set"}`,
             `**Jail Role** — ${state.jailRoleId ? `<@&${state.jailRoleId}>` : "not set"}`,

@@ -10,6 +10,7 @@ export const botConfigTable = pgTable("bot_config", {
   verificatorsRoleId: text("verificators_role_id"),
   gameManagerRoleId: text("game_manager_role_id"),
   verificationLogsChannelId: text("verification_logs_channel_id"),
+  verificationRequestsChannelId: text("verification_requests_channel_id"),
   verificationCategoryId: text("verification_category_id"),
   assistanceCategoryId: text("assistance_category_id"),
   pvsCategoryId: text("pvs_category_id"),
