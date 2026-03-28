@@ -61,8 +61,9 @@ async function buildPanel(dynamicRoles, guild) {
     new SeparatorBuilder().setDivider(true)
   );
 
-  // Pre-fetch members so role.members.size is accurate
+  // Pre-fetch members AND roles so member counts are accurate
   try { await guild.members.fetch(); } catch (_) {}
+  try { await guild.roles.fetch(); } catch (_) {}
 
   // Select menus (one per category with options)
   const menuRows = [];
