@@ -125,7 +125,8 @@
           "roleId": "1487375771109560476"
         }
       ],
-      "roleLimit": 5
+      "roleLimit": 5,
+      "icon": null
     },
     {
       "id": "pc_games",
