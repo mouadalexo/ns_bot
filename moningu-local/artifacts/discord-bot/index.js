@@ -180,14 +180,22 @@ client.once('clientReady', async () => {
       name: 'help',
       description: 'Show available bot commands',
     },
+    {
+      name: 'ping',
+      description: 'Check bot latency and status',
+    },
   ];
 
   try {
     const rest = new REST().setToken(process.env.MONINGU_TOKEN || process.env.DISCORD_TOKEN);
 
     if (guildId) {
+      // Register to guild instantly
       await rest.put(Routes.applicationGuildCommands(client.user.id, guildId), { body: commands });
       console.log('Slash commands registered to guild (instant).');
+      // Clear any old global commands to prevent duplicates showing in other servers
+      await rest.put(Routes.applicationCommands(client.user.id), { body: [] });
+      console.log('Global commands cleared (no duplicates).');
     } else {
       await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
       console.log('Slash commands registered globally (may take up to 1 hour).');
@@ -216,6 +224,14 @@ client.on('interactionCreate', async (interaction) => {
       }
       if (interaction.commandName === 'list') {
         await handleListCommand(interaction);
+        return;
+      }
+      if (interaction.commandName === 'ping') {
+        const ws = client.ws.ping;
+        await interaction.reply({
+          content: `🏓 Pong!  **${ws}ms** latency`,
+          ephemeral: true,
+        });
         return;
       }
     }

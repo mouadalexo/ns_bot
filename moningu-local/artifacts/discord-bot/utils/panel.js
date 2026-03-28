@@ -47,19 +47,27 @@ async function fetchEmoji(guild, emojiId) {
 async function buildPanel(dynamicRoles, guild) {
   const categories = (dynamicRoles.categories || []).slice(0, 5);
 
-  const container = new ContainerBuilder().setAccentColor(0xffe500);
+  const container = new ContainerBuilder().setAccentColor(0xff9f00);
 
   const titleEmoji = (await fetchEmoji(guild, '1469099919666188542')) ?? '';
   const descEmoji  = (await fetchEmoji(guild, '1354455984323563731')) ?? '';
 
-  // Title
+  // Title — use custom if set, fallback to default
+  const titleContent = dynamicRoles.panelTitle
+    ? dynamicRoles.panelTitle
+    : `## ${titleEmoji}  Night Stars  •  Reaction Roles`.trim();
+
   container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(`## ${titleEmoji}  Night Stars  •  Reaction Roles`.trim())
+    new TextDisplayBuilder().setContent(titleContent)
   );
 
-  // Description
+  // Description — use custom if set, fallback to default
+  const descContent = dynamicRoles.panelMessage
+    ? dynamicRoles.panelMessage
+    : `**Khtar roles libghiti** ${descEmoji}`.trim();
+
   container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(`**Khtar roles libghiti** ${descEmoji}`.trim())
+    new TextDisplayBuilder().setContent(descContent)
   );
 
   container.addSeparatorComponents(

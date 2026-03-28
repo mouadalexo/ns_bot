@@ -117,6 +117,8 @@ function settingsEmbed(dynamicRoles) {
   const logCh = dynamicRoles.logChannelId ? `<#${dynamicRoles.logChannelId}>` : '_Not set_';
   const reqRole = dynamicRoles.requiredRoleId ? `<@&${dynamicRoles.requiredRoleId}>` : '_Not set_';
   const mgrRole = dynamicRoles.managerRoleId ? `<@&${dynamicRoles.managerRoleId}>` : '_Not set (Admins only)_';
+  const panelTitle = dynamicRoles.panelTitle ? `\`${dynamicRoles.panelTitle.slice(0, 40)}${dynamicRoles.panelTitle.length > 40 ? '…' : ''}\`` : '_Default_';
+  const panelMsg   = dynamicRoles.panelMessage ? `\`${dynamicRoles.panelMessage.slice(0, 40)}${dynamicRoles.panelMessage.length > 40 ? '…' : ''}\`` : '_Default_';
   return new EmbedBuilder()
     .setTitle('⚙️ Bot Settings')
     .setDescription(
@@ -125,7 +127,10 @@ function settingsEmbed(dynamicRoles) {
       `**🔒 Required Role:** ${reqRole}\n` +
       `*Members must have this role to use the panel.*\n\n` +
       `**🛡️ Manager Role:** ${mgrRole}\n` +
-      `*Who can use \`!panel\`, \`/list\`, and \`/help\`.*`
+      `*Who can use \`/panel\`, \`/list\`, and \`/help\`.*\n\n` +
+      `**📝 Panel Title:** ${panelTitle}\n` +
+      `**💬 Panel Message:** ${panelMsg}\n` +
+      `*Supports animated emojis — paste them as \`<a:name:id>\`*`
     )
     .setColor(0x5865F2);
 }
@@ -164,6 +169,17 @@ function settingsRows(dynamicRoles) {
         .setLabel('🗑️ Clear Manager Role')
         .setStyle(ButtonStyle.Danger)
         .setDisabled(!dynamicRoles.managerRoleId),
+    ),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('set_edit_panel_message')
+        .setLabel('📝 Panel Title & Message')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('set_reset_panel_message')
+        .setLabel('↺ Reset to Default')
+        .setStyle(ButtonStyle.Danger)
+        .setDisabled(!dynamicRoles.panelTitle && !dynamicRoles.panelMessage),
     ),
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -949,6 +965,51 @@ async function handleSetButton(interaction, dynamicRoles, saveStorage) {
     return;
   }
 
+  // ── Edit panel title & message ──
+  if (id === 'set_edit_panel_message') {
+    const modal = new ModalBuilder()
+      .setCustomId('modal_panel_message')
+      .setTitle('Customize Panel');
+
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('panel_title')
+          .setLabel('Panel Title (use ## for heading)')
+          .setStyle(TextInputStyle.Short)
+          .setPlaceholder('## Night Stars  •  Reaction Roles')
+          .setRequired(false)
+          .setMaxLength(100)
+          .setValue(dynamicRoles.panelTitle || '')
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('panel_message')
+          .setLabel('Panel Message / Description')
+          .setStyle(TextInputStyle.Paragraph)
+          .setPlaceholder('Paste animated emojis as <a:name:id> or regular ones directly')
+          .setRequired(false)
+          .setMaxLength(300)
+          .setValue(dynamicRoles.panelMessage || '')
+      ),
+    );
+
+    await interaction.showModal(modal);
+    return;
+  }
+
+  // ── Reset panel title & message ──
+  if (id === 'set_reset_panel_message') {
+    dynamicRoles.panelTitle = null;
+    dynamicRoles.panelMessage = null;
+    saveStorage();
+    await interaction.update({
+      embeds: [settingsEmbed(dynamicRoles)],
+      components: settingsRows(dynamicRoles),
+    });
+    return;
+  }
+
   // ── Rename category → show modal ──
   if (id.startsWith('set_rename_cat:')) {
     const catId = id.slice('set_rename_cat:'.length);
@@ -1318,6 +1379,22 @@ async function handleSetModal(interaction, dynamicRoles, saveStorage) {
         )
         .setColor(0x5865F2)],
       components: buildEmojiPickerComponents(catId, interaction.guild),
+    });
+    return;
+  }
+
+  // ── Panel title & message modal ──
+  if (id === 'modal_panel_message') {
+    const title   = interaction.fields.getTextInputValue('panel_title').trim() || null;
+    const message = interaction.fields.getTextInputValue('panel_message').trim() || null;
+
+    dynamicRoles.panelTitle   = title;
+    dynamicRoles.panelMessage = message;
+    saveStorage();
+
+    await interaction.update({
+      embeds: [settingsEmbed(dynamicRoles)],
+      components: settingsRows(dynamicRoles),
     });
     return;
   }
