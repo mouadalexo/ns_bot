@@ -109,8 +109,8 @@ function buildDeployChannelSelect() {
 }
 
 export async function registerPanelCommands(client: Client) {
-  const token = process.env.DISCORD_TOKEN;
-  if (!token) throw new Error("DISCORD_TOKEN is missing");
+  const token = process.env.MONINGU_TOKEN || process.env.DISCORD_TOKEN;
+  if (!token) throw new Error("MONINGU_TOKEN is missing");
 
   const panelCommand = new SlashCommandBuilder()
     .setName("panel")
@@ -120,21 +120,20 @@ export async function registerPanelCommands(client: Client) {
 
   const rest = new REST().setToken(token);
 
-  for (const guild of client.guilds.cache.values()) {
-    try {
-      const existing = (await rest.get(
-        Routes.applicationGuildCommands(client.user!.id, guild.id)
-      )) as { name: string }[];
+  try {
+    const existing = (await rest.get(
+      Routes.applicationCommands(client.user!.id)
+    )) as { name: string }[];
 
-      const alreadyExists = existing.some((c) => c.name === "panel");
-      if (!alreadyExists) {
-        await rest.post(Routes.applicationGuildCommands(client.user!.id, guild.id), {
-          body: panelCommand,
-        });
-      }
-    } catch (err) {
-      console.error(`Failed to register /panel for guild ${guild.name}:`, err);
+    const alreadyExists = existing.some((c) => c.name === "panel");
+    if (!alreadyExists) {
+      await rest.post(Routes.applicationCommands(client.user!.id), {
+        body: panelCommand,
+      });
     }
+    console.log("Registered global /panel command successfully");
+  } catch (err) {
+    console.error("Failed to register global /panel command:", err);
   }
 
   client.on("interactionCreate", async (interaction) => {

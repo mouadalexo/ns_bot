@@ -122,21 +122,18 @@ const commands = [
 ].map((c) => c.toJSON());
 
 export async function registerSlashCommands(client: Client) {
-  const token = process.env.DISCORD_TOKEN;
-  if (!token) throw new Error("DISCORD_TOKEN is missing");
+  const token = process.env.MONINGU_TOKEN || process.env.DISCORD_TOKEN;
+  if (!token) throw new Error("MONINGU_TOKEN is missing");
 
   const rest = new REST().setToken(token);
-  const guilds = client.guilds.cache.values();
 
-  for (const guild of guilds) {
-    try {
-      await rest.put(Routes.applicationGuildCommands(client.user!.id, guild.id), {
-        body: commands,
-      });
-      console.log(`Registered slash commands for guild: ${guild.name}`);
-    } catch (err) {
-      console.error(`Failed to register commands for guild ${guild.name}:`, err);
-    }
+  try {
+    await rest.put(Routes.applicationCommands(client.user!.id), {
+      body: commands,
+    });
+    console.log("Registered global slash commands successfully");
+  } catch (err) {
+    console.error("Failed to register global slash commands:", err);
   }
 
   client.on("interactionCreate", async (interaction) => {
