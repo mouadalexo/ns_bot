@@ -11,11 +11,33 @@ import {
   PermissionFlagsBits,
   Message,
   ColorResolvable,
+  Guild,
 } from "discord.js";
 import { db } from "@workspace/db";
 import { botConfigTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { isMainGuild } from "../../utils/guildFilter.js";
+
+// ── Ann prefix from DB ────────────────────────────────────────────────────────
+async function getAnnPrefix(guildId: string): Promise<string> {
+  const [cfg] = await db
+    .select({ annPrefix: botConfigTable.annPrefix })
+    .from(botConfigTable)
+    .where(eq(botConfigTable.guildId, guildId))
+    .limit(1);
+  return cfg?.annPrefix ?? "!";
+}
+
+// ── Resolve emoji codes from guild cache ──────────────────────────────────────
+function resolveEmojiCodes(text: string, guild: Guild): string {
+  return text.replace(/<(a?):([a-zA-Z0-9_]+):(\d+)>/g, (match, animated, name, id) => {
+    const byId = guild.emojis.cache.get(id);
+    if (byId) return byId.toString();
+    const byName = guild.emojis.cache.find((e) => e.name === name);
+    if (byName) return byName.toString();
+    return match;
+  });
+}
 
 // ── Colors ────────────────────────────────────────────────────────────────────
 const GOLD    = 0xffe500 as ColorResolvable;
@@ -126,16 +148,17 @@ export function registerAnnouncementsModule(client: Client): void {
     if (!isMainGuild(message.guild.id)) return;
 
     const raw = message.content.trim();
+    const prefix = await getAnnPrefix(message.guild.id);
 
-    // ── !setannrole @role ──────────────────────────────────────────────
-    if (raw.startsWith("!setannrole")) {
+    // ── {prefix}setannrole @role ───────────────────────────────────────
+    if (raw.startsWith(prefix + "setannrole")) {
       if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
         await tempReply(message, "❌ Only admins can set the announcements role.");
         return;
       }
       const match = raw.match(/<@&(\d+)>/);
       if (!match) {
-        await tempReply(message, "❌ Please mention a role: `!setannrole @Role`");
+        await tempReply(message, `❌ Please mention a role: \`${prefix}setannrole @Role\``);
         return;
       }
       const roleId = match[1];
@@ -146,21 +169,21 @@ export function registerAnnouncementsModule(client: Client): void {
 
       await message.delete().catch(() => {});
       const confirm = await message.channel.send(
-        `✅ Announcements role set to <@&${roleId}>. Members with this role can now use \`!ann\` and \`!event\`.`
+        `✅ Announcements role set to <@&${roleId}>. Members with this role can now use \`${prefix}ann\` and \`${prefix}event\`.`
       );
       setTimeout(() => confirm.delete().catch(() => {}), 8000);
       return;
     }
 
-    // ── !addannchannel #channel ────────────────────────────────────────
-    if (raw.startsWith("!addannchannel")) {
+    // ── {prefix}addannchannel #channel ────────────────────────────────
+    if (raw.startsWith(prefix + "addannchannel")) {
       if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
         await tempReply(message, "❌ Only admins can configure announcement channels.");
         return;
       }
       const match = raw.match(/<#(\d+)>/);
       if (!match) {
-        await tempReply(message, "❌ Mention a channel: `!addannchannel #channel`");
+        await tempReply(message, `❌ Mention a channel: \`${prefix}addannchannel #channel\``);
         return;
       }
       const channelId = match[1];
@@ -170,7 +193,7 @@ export function registerAnnouncementsModule(client: Client): void {
         return;
       }
       if (current.length >= 4) {
-        await tempReply(message, "❌ You can only have up to 4 announcement channels. Remove one first with `!removeannchannel`.");
+        await tempReply(message, `❌ You can only have up to 4 announcement channels. Remove one first with \`${prefix}removeannchannel\`.`);
         return;
       }
       current.push(channelId);
@@ -187,15 +210,15 @@ export function registerAnnouncementsModule(client: Client): void {
       return;
     }
 
-    // ── !removeannchannel #channel ─────────────────────────────────────
-    if (raw.startsWith("!removeannchannel")) {
+    // ── {prefix}removeannchannel #channel ─────────────────────────────
+    if (raw.startsWith(prefix + "removeannchannel")) {
       if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
         await tempReply(message, "❌ Only admins can configure announcement channels.");
         return;
       }
       const match = raw.match(/<#(\d+)>/);
       if (!match) {
-        await tempReply(message, "❌ Mention a channel: `!removeannchannel #channel`");
+        await tempReply(message, `❌ Mention a channel: \`${prefix}removeannchannel #channel\``);
         return;
       }
       const channelId = match[1];
@@ -220,8 +243,8 @@ export function registerAnnouncementsModule(client: Client): void {
       return;
     }
 
-    // ── !annchannels ────────────────────────────────────────────────────
-    if (raw === "!annchannels") {
+    // ── {prefix}annchannels ───────────────────────────────────────────
+    if (raw === prefix + "annchannels") {
       if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
         await tempReply(message, "❌ Only admins can view announcement channel config.");
         return;
@@ -234,8 +257,37 @@ export function registerAnnouncementsModule(client: Client): void {
       return;
     }
 
-    // ── !ann [text] ────────────────────────────────────────────────────
-    if (raw.startsWith("!ann")) {
+    // ── {prefix}testann [text] ────────────────────────────────────────
+    if (raw.startsWith(prefix + "testann")) {
+      if (!await isAuthorized(message)) {
+        await tempReply(message, "❌ You don't have permission to test announcements.");
+        return;
+      }
+
+      const text = raw.slice((prefix + "testann").length).trim();
+      const attachment = message.attachments.first();
+      const imageUrl = attachment?.url;
+
+      if (!text && !imageUrl) {
+        await tempReply(message, `❌ Write your announcement after \`${prefix}testann\`, or attach an image.`);
+        return;
+      }
+
+      const resolvedText = resolveEmojiCodes(text, message.guild);
+
+      const embed = buildAnnouncementEmbed(
+        { name: message.guild.name, iconURL: () => message.guild!.iconURL() },
+        resolvedText || " ",
+        imageUrl,
+        true
+      );
+
+      await message.reply({ embeds: [embed] });
+      return;
+    }
+
+    // ── {prefix}ann [text] ────────────────────────────────────────────
+    if (raw.startsWith(prefix + "ann")) {
       if (!await isAuthorized(message)) {
         await tempReply(message, "❌ You don't have permission to post announcements.");
         return;
@@ -247,21 +299,23 @@ export function registerAnnouncementsModule(client: Client): void {
         return;
       }
 
-      const text = raw.slice("!ann".length).trim();
+      const text = raw.slice((prefix + "ann").length).trim();
       const attachment = message.attachments.first();
       const imageUrl = attachment?.url;
 
       if (!text && !imageUrl) {
-        await tempReply(message, "❌ Write your announcement after `!ann`, or attach an image.");
+        await tempReply(message, `❌ Write your announcement after \`${prefix}ann\`, or attach an image.`);
         return;
       }
+
+      const resolvedText = resolveEmojiCodes(text, message.guild);
 
       const channel = message.channel as TextChannel;
       await message.delete().catch(() => {});
 
       const embed = buildAnnouncementEmbed(
         { name: message.guild.name, iconURL: () => message.guild!.iconURL() },
-        text || " ",
+        resolvedText || " ",
         imageUrl
       );
 
@@ -269,35 +323,8 @@ export function registerAnnouncementsModule(client: Client): void {
       return;
     }
 
-    // ── !testann [text] ────────────────────────────────────────────────
-    if (raw.startsWith("!testann")) {
-      if (!await isAuthorized(message)) {
-        await tempReply(message, "❌ You don't have permission to test announcements.");
-        return;
-      }
-
-      const text = raw.slice("!testann".length).trim();
-      const attachment = message.attachments.first();
-      const imageUrl = attachment?.url;
-
-      if (!text && !imageUrl) {
-        await tempReply(message, "❌ Write your announcement after `!testann`, or attach an image.");
-        return;
-      }
-
-      const embed = buildAnnouncementEmbed(
-        { name: message.guild.name, iconURL: () => message.guild!.iconURL() },
-        text || " ",
-        imageUrl,
-        true
-      );
-
-      await message.reply({ embeds: [embed] });
-      return;
-    }
-
-    // ── !event ──────────────────────────────────────────────────────────────
-    if (raw === "!event") {
+    // ── {prefix}event ─────────────────────────────────────────────────
+    if (raw === prefix + "event") {
       if (!await isAuthorized(message)) {
         await tempReply(message, "❌ You don't have permission to post events.");
         return;
@@ -339,8 +366,8 @@ export function registerAnnouncementsModule(client: Client): void {
       return;
     }
 
-    // ── !testevent ──────────────────────────────────────────────────────────
-    if (raw === "!testevent") {
+    // ── {prefix}testevent ─────────────────────────────────────────────
+    if (raw === prefix + "testevent") {
       if (!await isAuthorized(message)) {
         await tempReply(message, "❌ You don't have permission to test events.");
         return;
