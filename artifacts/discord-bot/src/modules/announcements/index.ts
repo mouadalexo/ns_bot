@@ -22,15 +22,20 @@ import { isMainGuild } from "../../utils/guildFilter.js";
 
 // ── Bold Unicode (Math Sans-Serif Bold — letters + digits) ────────────────────
 function toBold(text: string): string {
-  const result: string[] = [];
-  for (const ch of text) {
-    const c = ch.codePointAt(0)!;
-    if (c >= 65 && c <= 90)  result.push(String.fromCodePoint(0x1D5D4 + c - 65));
-    else if (c >= 97 && c <= 122)  result.push(String.fromCodePoint(0x1D5EE + c - 97));
-    else if (c >= 48 && c <= 57)   result.push(String.fromCodePoint(0x1D7EC + c - 48));
-    else result.push(ch);
-  }
-  return result.join("");
+  // Split on Discord emoji tags so they are never bolded
+  const parts = text.split(/(<a?:[a-zA-Z0-9_~]+:\d+>)/g);
+  return parts.map((part, i) => {
+    if (i % 2 === 1) return part; // emoji tag — keep as-is
+    const result: string[] = [];
+    for (const ch of part) {
+      const c = ch.codePointAt(0)!;
+      if (c >= 65 && c <= 90)       result.push(String.fromCodePoint(0x1D5D4 + c - 65));
+      else if (c >= 97 && c <= 122) result.push(String.fromCodePoint(0x1D5EE + c - 97));
+      else if (c >= 48 && c <= 57)  result.push(String.fromCodePoint(0x1D7EC + c - 48));
+      else result.push(ch);
+    }
+    return result.join("");
+  }).join("");
 }
 
 function isValidUrl(str: string): boolean {
