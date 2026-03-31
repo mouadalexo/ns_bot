@@ -22,8 +22,8 @@ import { isMainGuild } from "../../utils/guildFilter.js";
 
 // ── Bold Unicode (Math Sans-Serif Bold — letters + digits) ────────────────────
 function toBold(text: string): string {
-  // Split on Discord emoji tags so they are never bolded
-  const parts = text.split(/(<a?:[a-zA-Z0-9_~]+:\d+>)/g);
+  // Split on any Discord-formatted tag (<#id>, <@id>, <@&id>, emojis, timestamps, etc.)
+  const parts = text.split(/(<[^>]+>)/g);
   return parts.map((part, i) => {
     if (i % 2 === 1) return part; // emoji tag — keep as-is
     const result: string[] = [];
@@ -321,8 +321,7 @@ async function openAnnSetupInChannel(message: Message, mode: "ann" | "event"): P
     ],
   });
 
-  // Auto-delete launcher after 30s if not clicked
-  setTimeout(() => launcher.delete().catch(() => {}), 30_000);
+  // Launcher stays until user dismisses it manually
 }
 
 // ── Module Registration ───────────────────────────────────────────────────────
@@ -409,7 +408,6 @@ async function handleAnnButton(interaction: ButtonInteraction, client: Client): 
     });
     state.panelInteraction = interaction;
     annSetupState.set(ownerId, state);
-    await interaction.message.delete().catch(() => {});
     return;
   }
 
