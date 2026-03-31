@@ -75,12 +75,56 @@ function buildAllCommandsEmbed(pvs = "=", mgr = "+", ctp = "-", ann = "!") {
     .setTitle("\uD83D\uDCCB Night Stars Bot \u2014 All Commands")
     .addFields(
       {
-        name: "📣 Announcements (staff with announce role or admin)",
+        name: "\uD83D\uDCE3 Announcements (Ann Role or Admin)",
         value: [
-          `${ann}ann` + " — Post an announcement (panel opens in channel)",
-          `${ann}event` + " — Post an event",
-          "💡 Use `## Title` to add a heading embed",
-          "💡 Use `;emoji_name` in text to insert a server emoji",
+          `\`${ann}ann\`` + " \u2014 Post an announcement",
+`\`${ann}event\`` + " \u2014 Post an event",
+          "\uD83D\uDCA1 Use `## Title` for a heading embed",
+          "\uD83D\uDCA1 Use `;emoji_name` to insert a server emoji",
+        ].join("\n"),
+        inline: false,
+      },
+      {
+        name: "\uD83C\uDFA7 PVS \u2014 Private Voice (premium members)",
+        value: [
+          `\`${pvs}key @user\`` + " \u2014 Give or remove room access",
+          `\`${pvs}pull @user\`` + " \u2014 Pull from waiting room",
+          `\`${pvs}see keys\`` + " \u2014 List who has access",
+          `\`${pvs}clear keys\`` + " \u2014 Remove all access keys",
+          `\`${pvs}name NewName\`` + " \u2014 Rename your room",
+        ].join("\n"),
+        inline: false,
+      },
+      {
+        name: "\uD83D\uDD27 Staff \u2014 PVS Manager (Manager Role required)",
+        value: [
+          `\`${mgr}pv @member\`` + " \u2014 Create a premium voice room",
+          `\`${mgr}pv delete @member\`` + " \u2014 Remove a premium voice room",
+        ].join("\n"),
+        inline: false,
+      },
+      {
+        name: "\u2699\uFE0F Slash Commands (Admin only)",
+        value: [
+          "`/setup pvs` \u2014 Configure the Private Voice System",
+          "`/setup ctp-category` \u2014 Configure CTP games",
+          "`/setup ctp-onetap` \u2014 Configure CTP Onetap",
+          "`/setup staff` \u2014 Set staff role & blocked channels",
+          "`/ann setup` \u2014 Configure announcements (roles, event colors)",
+          "`/prefix` \u2014 View and edit command prefixes",
+          "`/ping` \u2014 Check bot latency",
+        ].join("\n"),
+        inline: false,
+      },
+      {
+        name: "\uD83C\uDFAE CTP \u2014 Call to Play (all members)",
+        value: [
+          "**System 1 \u2014 Category**",
+          `\`${ctp}tag\`` + " \u2014 Join a game voice channel \u2192 type the command",
+          "",
+          "**System 2 \u2014 Onetap (Temp Voice)**",
+          `\`${ctp}gamename\`` + " \u2014 Join a temp voice channel \u2192 type the game name",
+          "\uD83D\uDCA1 Example: `" + ctp + "valorant` or `" + ctp + "fortnite`",
         ].join("\n"),
         inline: false,
       },
@@ -166,6 +210,13 @@ export async function registerPanelCommands(client: Client) {
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
     .toJSON();
 
+  const generalCommand = new SlashCommandBuilder()
+    .setName("general")
+    .setDescription("General bot settings")
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
+    .addSubcommand((sub) => sub.setName("setup").setDescription("Set the staff role and blocked channels"))
+    .toJSON();
+
   const rest = new REST().setToken(token);
 
   const registerForGuild = async (guildId: string, guildName: string) => {
@@ -225,7 +276,7 @@ export async function registerPanelCommands(client: Client) {
         "cp_open_details", "cp_save", "cp_reset",
         "gp_save", "gp_reset",
         "pfx_edit",
-        "ap_save", "ap_reset", "ap_color_open", "ap_color_ann_title", "ap_color_ann_desc", "ap_color_ann_add", "ap_color_event", "ap_back",
+        "ap_save", "ap_reset", "ap_event_color_open", "ap_color_event_title", "ap_color_event_desc", "ap_color_event_add", "ap_back",
       ];
       if (panelIds.includes(interaction.customId) || interaction.customId.startsWith("ct_")) {
         await handleButtonInteraction(interaction as ButtonInteraction);
@@ -259,14 +310,12 @@ export async function registerPanelCommands(client: Client) {
       } else if (customId.startsWith("cp_") || customId.startsWith("ct_")) {
         try { await handleCtpDetailsModalSubmit(interaction as ModalSubmitInteraction); } catch (err) { console.error("CTP modal error:", err); }
         try { await handleCtpTagModalSubmit(interaction as ModalSubmitInteraction); } catch (err) { console.error("CTP tag modal error:", err); }
-      } else if (customId === "ap_modal_ann_title") {
-        await handleAnnColorModalSubmit(interaction as ModalSubmitInteraction, "ann_title");
-      } else if (customId === "ap_modal_ann_desc") {
-        await handleAnnColorModalSubmit(interaction as ModalSubmitInteraction, "ann_desc");
-      } else if (customId === "ap_modal_ann_add") {
-        await handleAnnColorModalSubmit(interaction as ModalSubmitInteraction, "ann_add");
-      } else if (customId === "ap_modal_event") {
-        await handleAnnColorModalSubmit(interaction as ModalSubmitInteraction, "event");
+      } else if (customId === "ap_modal_event_title") {
+        await handleAnnColorModalSubmit(interaction as ModalSubmitInteraction, "event_title");
+      } else if (customId === "ap_modal_event_desc") {
+        await handleAnnColorModalSubmit(interaction as ModalSubmitInteraction, "event_desc");
+      } else if (customId === "ap_modal_event_add") {
+        await handleAnnColorModalSubmit(interaction as ModalSubmitInteraction, "event_add");
       }
       return;
     }
@@ -304,6 +353,8 @@ async function handleSetupCommand(interaction: ChatInputCommandInteraction) {
     await openCtpManagePanel(interaction as unknown as ButtonInteraction);
   } else if (sub === "ctp-onetap") {
     await openCtpTagPanel(interaction as unknown as ButtonInteraction);
+  } else if (sub === "staff") {
+    await openGeneralSetupPanel(interaction as unknown as ButtonInteraction);
   }
 }
 
@@ -357,16 +408,14 @@ async function handleButtonInteraction(interaction: ButtonInteraction) {
       await handleAnnPanelSave(interaction);
     } else if (customId === "ap_reset") {
       await handleAnnPanelReset(interaction);
-    } else if (customId === "ap_color_open") {
+    } else if (customId === "ap_event_color_open") {
       await openAnnColorPanel(interaction);
-    } else if (customId === "ap_color_ann_title") {
-      await openAnnColorModal(interaction, "ann_title");
-    } else if (customId === "ap_color_ann_desc") {
-      await openAnnColorModal(interaction, "ann_desc");
-    } else if (customId === "ap_color_ann_add") {
-      await openAnnColorModal(interaction, "ann_add");
-    } else if (customId === "ap_color_event") {
-      await openAnnColorModal(interaction, "event");
+    } else if (customId === "ap_color_event_title") {
+      await openAnnColorModal(interaction, "event_title");
+    } else if (customId === "ap_color_event_desc") {
+      await openAnnColorModal(interaction, "event_desc");
+    } else if (customId === "ap_color_event_add") {
+      await openAnnColorModal(interaction, "event_add");
     } else if (customId === "ap_back") {
       await handleAnnColorBack(interaction);
     }
