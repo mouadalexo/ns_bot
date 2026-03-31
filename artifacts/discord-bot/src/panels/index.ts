@@ -84,7 +84,7 @@ function buildAllCommandsEmbed(pvs = "=", mgr = "+", ctp = "-", ann = "!") {
         ].join("\n"),
         inline: false,
       },
-      { name: "\u200B", value: "\u200B", inline: false },
+      { name: "\u200B", value: "** **", inline: false },
       {
         name: "\uD83C\uDFA7 PVS \u2014 Private Voice (premium members)",
         value: [
@@ -96,7 +96,7 @@ function buildAllCommandsEmbed(pvs = "=", mgr = "+", ctp = "-", ann = "!") {
         ].join("\n"),
         inline: false,
       },
-      { name: "\u200B", value: "\u200B", inline: false },
+      { name: "\u200B", value: "** **", inline: false },
       {
         name: "\uD83D\uDD27 Staff \u2014 PVS Manager (Manager Role required)",
         value: [
@@ -105,7 +105,7 @@ function buildAllCommandsEmbed(pvs = "=", mgr = "+", ctp = "-", ann = "!") {
         ].join("\n"),
         inline: false,
       },
-      { name: "\u200B", value: "\u200B", inline: false },
+      { name: "\u200B", value: "** **", inline: false },
       {
         name: "\u2699\uFE0F Slash Commands (Admin only)",
         value: [
@@ -119,7 +119,7 @@ function buildAllCommandsEmbed(pvs = "=", mgr = "+", ctp = "-", ann = "!") {
         ].join("\n"),
         inline: false,
       },
-      { name: "\u200B", value: "\u200B", inline: false },
+      { name: "\u200B", value: "** **", inline: false },
       {
         name: "\uD83C\uDFAE CTP \u2014 Call to Play (all members)",
         value: [
