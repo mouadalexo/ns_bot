@@ -59,10 +59,12 @@ async function resolveEmojiCodes(text: string, guild: Guild): Promise<string> {
 async function getAnnColors(guildId: string) {
   const [cfg] = await db
     .select({
-      annTitleColor: botConfigTable.annTitleColor,
-      annDescColor:  botConfigTable.annDescColor,
-      annAddColor:   botConfigTable.annAddColor,
-      eventColor:    botConfigTable.eventColor,
+      annTitleColor:  botConfigTable.annTitleColor,
+      annDescColor:   botConfigTable.annDescColor,
+      annAddColor:    botConfigTable.annAddColor,
+      eventColor:     botConfigTable.eventColor,
+      eventDescColor: botConfigTable.eventDescColor,
+      eventAddColor:  botConfigTable.eventAddColor,
     })
     .from(botConfigTable)
     .where(eq(botConfigTable.guildId, guildId))
@@ -73,10 +75,12 @@ async function getAnnColors(guildId: string) {
     return (isNaN(num) ? fallback : num) as ColorResolvable;
   };
   return {
-    annTitleColor: parseHex(cfg?.annTitleColor, 0xffe500),
-    annDescColor:  parseHex(cfg?.annDescColor,  0xffe500),
-    annAddColor:   parseHex(cfg?.annAddColor,   0xffe500),
-    eventColor:    parseHex(cfg?.eventColor,    0x5865f2),
+    annTitleColor:  parseHex(cfg?.annTitleColor,  0xffe500),
+    annDescColor:   parseHex(cfg?.annDescColor,   0xffe500),
+    annAddColor:    parseHex(cfg?.annAddColor,    0xffe500),
+    eventTitleColor: parseHex(cfg?.eventColor,    0x5865f2),
+    eventDescColor:  parseHex(cfg?.eventDescColor, 0x5865f2),
+    eventAddColor:   parseHex(cfg?.eventAddColor,  0x5865f2),
   };
 }
 
@@ -130,6 +134,7 @@ interface AnnSetupState {
   mode: "ann" | "event";
   lockedToEvent: boolean;
   filled: boolean;
+  panelInteraction?: ButtonInteraction;
 }
 
 const annSetupState = new Map<string, AnnSetupState>();
@@ -297,13 +302,22 @@ async function openAnnSetupInChannel(message: Message, mode: "ann" | "event"): P
 
   await message.delete().catch(() => {});
 
-  const panel = await (message.channel as TextChannel).send({
-    embeds: [buildSetupPanelEmbed(state)],
-    components: buildSetupPanelComponents(state),
+  annSetupState.set(state.userId, state);
+
+  const launcher = await (message.channel as TextChannel).send({
+    content: `-# <@${state.userId}>, your setup panel is ready.`,
+    components: [
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`an_open:${state.userId}`)
+          .setLabel("📋 Open Setup Panel")
+          .setStyle(ButtonStyle.Primary)
+      ),
+    ],
   });
 
-  state.panelMessageId = panel.id;
-  annSetupState.set(state.userId, state);
+  // Auto-delete launcher after 30s if not clicked
+  setTimeout(() => launcher.delete().catch(() => {}), 30_000);
 }
 
 // ── Module Registration ───────────────────────────────────────────────────────
@@ -336,6 +350,7 @@ export function registerAnnouncementsModule(client: Client): void {
     if (interaction.isButton()) {
       const cid = interaction.customId;
       if (
+        cid.startsWith("an_open:")           ||
         cid.startsWith("an_fill:")           ||
         cid.startsWith("an_tag:")            ||
         cid.startsWith("an_send:")           ||
@@ -377,6 +392,19 @@ async function handleAnnButton(interaction: ButtonInteraction, client: Client): 
   const state = annSetupState.get(ownerId);
   if (!state) {
     await interaction.reply({ content: "\u274C Session expired. Run the command again.", ephemeral: true });
+    return;
+  }
+
+  // Open: reply ephemerally, store interaction for later updates
+  if (customId.startsWith("an_open:")) {
+    await interaction.reply({
+      ephemeral: true,
+      embeds: [buildSetupPanelEmbed(state)],
+      components: buildSetupPanelComponents(state),
+    });
+    state.panelInteraction = interaction;
+    annSetupState.set(ownerId, state);
+    await interaction.message.delete().catch(() => {});
     return;
   }
 
@@ -492,9 +520,6 @@ async function handleAnnButton(interaction: ButtonInteraction, client: Client): 
   if (customId.startsWith("an_cancel:")) {
     annSetupState.delete(ownerId);
     await interaction.update({ content: "\u2716\uFE0F Cancelled.", embeds: [], components: [] });
-    setTimeout(async () => {
-      await interaction.deleteReply().catch(() => {});
-    }, 3000);
     return;
   }
 
@@ -507,17 +532,14 @@ async function handleAnnButton(interaction: ButtonInteraction, client: Client): 
 
     annSetupState.delete(ownerId);
     await interaction.update({ content: "\u2705 Sending\u2026", embeds: [], components: [] });
-    setTimeout(async () => {
-      await interaction.deleteReply().catch(() => {});
-    }, 3000);
 
     const guild = client.guilds.cache.get(state.guildId);
     if (!guild) return;
 
     const colors = await getAnnColors(state.guildId);
     const isEvent = state.mode === "event";
-    const titleColor: ColorResolvable = isEvent ? colors.eventColor : colors.annTitleColor;
-    const descColor:  ColorResolvable = isEvent ? colors.eventColor : colors.annDescColor;
+    const titleColor: ColorResolvable = isEvent ? colors.eventTitleColor : colors.annTitleColor;
+    const descColor:  ColorResolvable = isEvent ? colors.eventDescColor  : colors.annDescColor;
     const addColor:   ColorResolvable = isEvent ? colors.eventColor : colors.annAddColor;
 
     const titleResolved = state.title      ? await resolveEmojiCodes(state.title,       guild) : "";
@@ -581,22 +603,13 @@ async function handleAnnModal(interaction: ModalSubmitInteraction, _client: Clie
   state.filled        = !!state.description;
   annSetupState.set(ownerId, state);
 
-  // Update the panel message in the guild channel
-  if (state.panelMessageId && state.panelChannelId) {
+  // Update the ephemeral panel via stored interaction
+  if (state.panelInteraction) {
     try {
-      const guild = interaction.guild;
-      if (guild) {
-        const panelChannel = await guild.channels.fetch(state.panelChannelId).catch(() => null) as TextChannel | null;
-        if (panelChannel) {
-          const panelMsg = await panelChannel.messages.fetch(state.panelMessageId).catch(() => null);
-          if (panelMsg) {
-            await panelMsg.edit({
-              embeds: [buildSetupPanelEmbed(state)],
-              components: buildSetupPanelComponents(state),
-            });
-          }
-        }
-      }
+      await state.panelInteraction.editReply({
+        embeds: [buildSetupPanelEmbed(state)],
+        components: buildSetupPanelComponents(state),
+      });
     } catch {}
   }
 
@@ -619,7 +632,9 @@ async function handleAnnColorModal(interaction: ModalSubmitInteraction): Promise
     return;
   }
 
-  const guildId = interaction.guild!.id;
+  const state2 = annSetupState.get(ownerId);
+  const guildId = state2?.guildId ?? interaction.guild?.id ?? "";
+  if (!guildId) return;
   const updateData =
     type === "ann_title" ? { annTitleColor: raw, updatedAt: new Date() } :
     type === "ann_desc"  ? { annDescColor:  raw, updatedAt: new Date() } :
@@ -652,20 +667,14 @@ async function handleAnnColorModal(interaction: ModalSubmitInteraction): Promise
     ephemeral: true,
   });
 
-  // Return panel to main view after color saved (if session still active)
+  // Return panel to main view after color saved
   const state = annSetupState.get(ownerId);
-  if (state?.panelMessageId && state?.panelChannelId) {
+  if (state?.panelInteraction) {
     try {
-      const panelChannel = await interaction.guild!.channels.fetch(state.panelChannelId).catch(() => null) as TextChannel | null;
-      if (panelChannel) {
-        const panelMsg = await panelChannel.messages.fetch(state.panelMessageId).catch(() => null);
-        if (panelMsg) {
-          await panelMsg.edit({
-            embeds: [buildSetupPanelEmbed(state)],
-            components: buildSetupPanelComponents(state),
-          });
-        }
-      }
+      await state.panelInteraction.editReply({
+        embeds: [buildSetupPanelEmbed(state)],
+        components: buildSetupPanelComponents(state),
+      });
     } catch {}
   }
 }
