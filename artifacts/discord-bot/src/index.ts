@@ -23,10 +23,18 @@ process.on("uncaughtException", (err) => {
 });
 
 const port = process.env.PORT ? parseInt(process.env.PORT) : 3000;
-createServer((_, res) => {
+const healthServer = createServer((_, res) => {
   res.writeHead(200);
   res.end("OK");
-}).listen(port, () => {
+});
+healthServer.on("error", (err: NodeJS.ErrnoException) => {
+  if (err.code === "EADDRINUSE") {
+    console.log(`[Bot] Port ${port} in use — health check disabled.`);
+  } else {
+    console.error("[Bot] Health check error:", err);
+  }
+});
+healthServer.listen(port, () => {
   console.log(`[Bot] Health check listening on port ${port}`);
 });
 

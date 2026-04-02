@@ -11,7 +11,14 @@ import {
 import { eq, and } from "drizzle-orm";
 import { isMainGuild } from "../../utils/guildFilter.js";
 
-const CTP_COMMAND = "-tag";
+async function getGuildPrefix(guildId: string): Promise<string> {
+  const [cfg] = await db
+    .select({ pvsPrefix: botConfigTable.pvsPrefix })
+    .from(botConfigTable)
+    .where(eq(botConfigTable.guildId, guildId))
+    .limit(1);
+  return cfg?.pvsPrefix ?? "=";
+}
 
 function formatSeconds(total: number): string {
   const m = Math.floor(total / 60);
@@ -28,9 +35,10 @@ export function registerCTPModule(client: Client) {
       if (!message.guild) return;
       if (!isMainGuild(message.guild.id)) return;
 
+      const prefix = await getGuildPrefix(message.guild.id);
       const content = message.content.toLowerCase().trim();
-      const isCTPTag = content === CTP_COMMAND;
-      const isTempTag = content.startsWith("-") && !isCTPTag && content.length > 1;
+      const isCTPTag = content === prefix + "tag";
+      const isTempTag = content.startsWith(prefix) && !isCTPTag && content.length > prefix.length;
 
       if (!isCTPTag && !isTempTag) return;
 
@@ -134,7 +142,7 @@ export function registerCTPModule(client: Client) {
 
       // ── -gamename in temp voice category ──────────────────────────────────
       if (isTempTag) {
-        const gameInput = content.slice(1).trim();
+        const gameInput = content.slice(prefix.length).trim();
         if (!gameInput) return;
 
         const voiceChannel = member.voice.channel;
@@ -165,7 +173,7 @@ export function registerCTPModule(client: Client) {
               embeds: [
                 new EmbedBuilder()
                   .setColor(0x5000ff)
-                  .setDescription(`**${ctpMatch.gameName}** has its own voice category! Join the game voice and use -tag there.`),
+                  .setDescription(`**${ctpMatch.gameName}** has its own voice category! Join the game voice and use \`${prefix}tag\` there.`),
               ],
             });
             setTimeout(() => notice.delete().catch(() => {}), 8000);
