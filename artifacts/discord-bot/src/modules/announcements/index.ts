@@ -441,6 +441,11 @@ export function registerAnnouncementsModule(client: Client): void {
       await openAnnSetupInChannel(message, "event");
       return;
     }
+
+    if (raw === prefix + "an" || raw.startsWith(prefix + "an ")) {
+      await handleInlineAnn(message, prefix);
+      return;
+    }
   });
 
   // ── Interactions ──────────────────────────────────────────────────────────
