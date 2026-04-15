@@ -264,12 +264,33 @@ async function editStoredSetupPanel(client: Client, state: AnnSetupState): Promi
   }).catch(() => {});
 }
 
-async function deleteSetupLauncher(interaction: ButtonInteraction, state: AnnSetupState): Promise<void> {
-  await interaction.message.delete().catch(async () => {
-    if (!state.panelMessageId) return;
-    const channelMessages = (interaction.channel as TextChannel | null)?.messages;
-    await channelMessages?.delete(state.panelMessageId).catch(() => {});
-  });
+async function deleteSetupLauncher(interaction: ButtonInteraction, client: Client, state: AnnSetupState): Promise<void> {
+  const launcherMessageId = state.panelMessageId ?? interaction.message.id;
+  const launcherChannelId = state.panelChannelId ?? interaction.channelId;
+
+  try {
+    await interaction.message.delete();
+    delete state.panelMessageId;
+    return;
+  } catch {}
+
+  const channel = await client.channels.fetch(launcherChannelId).catch(() => null);
+  const textChannel = channel as TextChannel | null;
+  const fetchedMessage = await textChannel?.messages.fetch(launcherMessageId).catch(() => null);
+
+  if (fetchedMessage) {
+    try {
+      await fetchedMessage.delete();
+      delete state.panelMessageId;
+      return;
+    } catch {}
+
+    await fetchedMessage.edit({
+      content: " ",
+      embeds: [],
+      components: [],
+    }).catch(() => {});
+  }
 }
 
 function buildColorSubPanelEmbed(): EmbedBuilder {
@@ -553,9 +574,9 @@ async function handleAnnButton(interaction: ButtonInteraction, client: Client): 
 
   // Open: reply ephemerally, store interaction for later updates
   if (customId.startsWith("an_open:")) {
-    await deleteSetupLauncher(interaction, state);
-    await interaction.reply({
-      ephemeral: true,
+    await interaction.deferReply({ ephemeral: true });
+    await deleteSetupLauncher(interaction, client, state);
+    await interaction.editReply({
       embeds: [buildSetupPanelEmbed(state)],
       components: buildSetupPanelComponents(state),
     });
