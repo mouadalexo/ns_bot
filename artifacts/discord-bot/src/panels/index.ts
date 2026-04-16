@@ -202,6 +202,18 @@ export async function registerPanelCommands(client: Client) {
       option.setName("role-hammer").setDescription("Role allowed to use =jail and =unjail").setRequired(true),
     )
     .addRoleOption((option) =>
+      option.setName("role-hammer-2").setDescription("Additional hammer role").setRequired(false),
+    )
+    .addRoleOption((option) =>
+      option.setName("role-hammer-3").setDescription("Additional hammer role").setRequired(false),
+    )
+    .addRoleOption((option) =>
+      option.setName("role-hammer-4").setDescription("Additional hammer role").setRequired(false),
+    )
+    .addRoleOption((option) =>
+      option.setName("role-hammer-5").setDescription("Additional hammer role").setRequired(false),
+    )
+    .addRoleOption((option) =>
       option.setName("role-jailed").setDescription("Role given to jailed members").setRequired(true),
     )
     .addRoleOption((option) =>
@@ -397,6 +409,14 @@ async function handleSetupJailCommand(interaction: ChatInputCommandInteraction) 
   }
 
   const hammerRole = interaction.options.getRole("role-hammer", true);
+  const hammerRoles = [
+    hammerRole,
+    interaction.options.getRole("role-hammer-2"),
+    interaction.options.getRole("role-hammer-3"),
+    interaction.options.getRole("role-hammer-4"),
+    interaction.options.getRole("role-hammer-5"),
+  ].filter((role): role is NonNullable<typeof hammerRole> => !!role);
+  const uniqueHammerRoleIds = [...new Set(hammerRoles.map((role) => role.id))];
   const jailedRole = interaction.options.getRole("role-jailed", true);
   const memberRole = interaction.options.getRole("role-member", true);
   const logsChannel = interaction.options.getChannel("logs-channel", true);
@@ -404,7 +424,8 @@ async function handleSetupJailCommand(interaction: ChatInputCommandInteraction) 
 
   const existing = await db.select().from(botConfigTable).where(eq(botConfigTable.guildId, guildId)).limit(1);
   const values = {
-    jailHammerRoleId: hammerRole.id,
+    jailHammerRoleId: uniqueHammerRoleIds[0],
+    jailHammerRoleIdsJson: JSON.stringify(uniqueHammerRoleIds),
     jailRoleId: jailedRole.id,
     memberRoleId: memberRole.id,
     jailLogsChannelId: logsChannel.id,
@@ -423,7 +444,7 @@ async function handleSetupJailCommand(interaction: ChatInputCommandInteraction) 
         .setColor(0x00c851)
         .setTitle("\u2705 Jail System Configured")
         .setDescription(
-          `**Hammer Role** — <@&${hammerRole.id}>\n` +
+          `**Hammer Roles** — ${uniqueHammerRoleIds.map((id) => `<@&${id}>`).join(", ")}\n` +
           `**Jailed Role** — <@&${jailedRole.id}>\n` +
           `**Member Role** — <@&${memberRole.id}>\n` +
           `**Logs Channel** — <#${logsChannel.id}>\n\n` +
