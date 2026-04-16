@@ -15,9 +15,9 @@ import { botConfigTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
 interface GeneralPanelState {
-  staffRoleId?: string;
+  coreRoleId?: string;
   blockedChannels: string[];
-  helpRoleIds: string[];
+  staffRoleIds: string[];
 }
 
 export const generalPanelState = new Map<string, GeneralPanelState>();
@@ -27,18 +27,18 @@ function buildGeneralPanelEmbed(state: GeneralPanelState) {
     ? state.blockedChannels.map(id => `<#${id}>`).join(", ")
     : "none";
 
-  const helpList = state.helpRoleIds.length
-    ? state.helpRoleIds.map(id => `<@&${id}>`).join(", ")
+  const staffList = state.staffRoleIds.length
+    ? state.staffRoleIds.map(id => `<@&${id}>`).join(", ")
     : "everyone (no restriction)";
 
   return new EmbedBuilder()
     .setColor(0x5000ff)
     .setTitle("\u2699\uFE0F General Setup")
     .setDescription(
-      `**Staff Role** \u2014 ${state.staffRoleId ? `<@&${state.staffRoleId}>` : "not set"}\n` +
-      "\u2514 Bypasses all permission checks across PVS and CTP\n\n" +
-      `**Help Roles** \u2014 ${helpList}\n` +
-      "\u2514 Only these roles can use `/help` (Admins and Staff always bypass)\n\n" +
+      `**Core Role** \u2014 ${state.coreRoleId ? `<@&${state.coreRoleId}>` : "not set"}\n` +
+      "\u2514 Bypasses all permission checks across PVS\n\n" +
+      `**Staff Role** \u2014 ${staffList}\n` +
+      "\u2514 Only these roles can use `/help` (Admins and Core Role always bypass)\n\n" +
       `**Blocked Channels** \u2014 ${blockedList}\n` +
       "\u2514 NS Bot text commands will not work in these channels"
     )
@@ -46,12 +46,12 @@ function buildGeneralPanelEmbed(state: GeneralPanelState) {
 }
 
 function buildGeneralPanelComponents(state: GeneralPanelState) {
-  const canSave = !!(state.staffRoleId || state.blockedChannels.length || state.helpRoleIds.length);
+  const canSave = !!(state.coreRoleId || state.blockedChannels.length || state.staffRoleIds.length);
 
   const row1 = new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(
     new RoleSelectMenuBuilder()
       .setCustomId("gp_staff_role")
-      .setPlaceholder(state.staffRoleId ? "\u2705 Staff Role (set)" : "Select Staff Role\u2026")
+      .setPlaceholder(state.coreRoleId ? "\u2705 Core Role (set)" : "Select Core Role\u2026")
       .setMinValues(1)
       .setMaxValues(1)
   );
@@ -60,9 +60,9 @@ function buildGeneralPanelComponents(state: GeneralPanelState) {
     new RoleSelectMenuBuilder()
       .setCustomId("gp_help_roles")
       .setPlaceholder(
-        state.helpRoleIds.length
-          ? `\u2705 ${state.helpRoleIds.length} Help Role(s) selected`
-          : "Select Help Roles (can use /help)\u2026"
+        state.staffRoleIds.length
+          ? `\u2705 ${state.staffRoleIds.length} Staff Role(s) selected`
+          : "Select Staff Role (can use /help)\u2026"
       )
       .setMinValues(0)
       .setMaxValues(10)
@@ -111,15 +111,15 @@ export async function openGeneralSetupPanel(interaction: ButtonInteraction) {
     try { blocked = JSON.parse(row.blockedChannelsJson); } catch {}
   }
 
-  let helpRoles: string[] = [];
+  let staffRoles: string[] = [];
   if (row?.helpRoleIdsJson) {
-    try { helpRoles = JSON.parse(row.helpRoleIdsJson); } catch {}
+    try { staffRoles = JSON.parse(row.helpRoleIdsJson); } catch {}
   }
 
   const state: GeneralPanelState = {
-    staffRoleId: row?.staffRoleId ?? undefined,
+    coreRoleId: row?.staffRoleId ?? undefined,
     blockedChannels: blocked,
-    helpRoleIds: helpRoles,
+    staffRoleIds: staffRoles,
   };
   generalPanelState.set(userId, state);
 
@@ -137,8 +137,8 @@ export async function openGeneralSetupPanel(interaction: ButtonInteraction) {
 
 export async function handleGeneralStaffRoleSelect(interaction: RoleSelectMenuInteraction) {
   const userId = interaction.user.id;
-  const state = generalPanelState.get(userId) ?? { blockedChannels: [], helpRoleIds: [] };
-  state.staffRoleId = interaction.values[0];
+  const state = generalPanelState.get(userId) ?? { blockedChannels: [], staffRoleIds: [] };
+  state.coreRoleId = interaction.values[0];
   generalPanelState.set(userId, state);
   await interaction.update({
     embeds: [buildGeneralPanelEmbed(state)],
@@ -148,8 +148,8 @@ export async function handleGeneralStaffRoleSelect(interaction: RoleSelectMenuIn
 
 export async function handleGeneralHelpRolesSelect(interaction: RoleSelectMenuInteraction) {
   const userId = interaction.user.id;
-  const state = generalPanelState.get(userId) ?? { blockedChannels: [], helpRoleIds: [] };
-  state.helpRoleIds = interaction.values;
+  const state = generalPanelState.get(userId) ?? { blockedChannels: [], staffRoleIds: [] };
+  state.staffRoleIds = interaction.values;
   generalPanelState.set(userId, state);
   await interaction.update({
     embeds: [buildGeneralPanelEmbed(state)],
@@ -159,7 +159,7 @@ export async function handleGeneralHelpRolesSelect(interaction: RoleSelectMenuIn
 
 export async function handleGeneralBlockedChSelect(interaction: ChannelSelectMenuInteraction) {
   const userId = interaction.user.id;
-  const state = generalPanelState.get(userId) ?? { blockedChannels: [], helpRoleIds: [] };
+  const state = generalPanelState.get(userId) ?? { blockedChannels: [], staffRoleIds: [] };
   state.blockedChannels = interaction.values;
   generalPanelState.set(userId, state);
   await interaction.update({
@@ -170,13 +170,13 @@ export async function handleGeneralBlockedChSelect(interaction: ChannelSelectMen
 
 export async function handleGeneralPanelSave(interaction: ButtonInteraction) {
   const userId = interaction.user.id;
-  const state = generalPanelState.get(userId) ?? { blockedChannels: [], helpRoleIds: [] };
+  const state = generalPanelState.get(userId) ?? { blockedChannels: [], staffRoleIds: [] };
   const guildId = interaction.guild!.id;
 
   const updateData: Record<string, unknown> = { updatedAt: new Date() };
-  if (state.staffRoleId) updateData.staffRoleId = state.staffRoleId;
+  if (state.coreRoleId) updateData.staffRoleId = state.coreRoleId;
   updateData.blockedChannelsJson = JSON.stringify(state.blockedChannels);
-  updateData.helpRoleIdsJson = JSON.stringify(state.helpRoleIds);
+  updateData.helpRoleIdsJson = JSON.stringify(state.staffRoleIds);
 
   const existing = await db.select().from(botConfigTable).where(eq(botConfigTable.guildId, guildId)).limit(1);
   if (existing.length) {
@@ -184,9 +184,9 @@ export async function handleGeneralPanelSave(interaction: ButtonInteraction) {
   } else {
     await db.insert(botConfigTable).values({
       guildId,
-      staffRoleId: state.staffRoleId,
+      staffRoleId: state.coreRoleId,
       blockedChannelsJson: JSON.stringify(state.blockedChannels),
-      helpRoleIdsJson: JSON.stringify(state.helpRoleIds),
+      helpRoleIdsJson: JSON.stringify(state.staffRoleIds),
     });
   }
 
@@ -196,8 +196,8 @@ export async function handleGeneralPanelSave(interaction: ButtonInteraction) {
     ? state.blockedChannels.map(id => `<#${id}>`).join(", ")
     : "none";
 
-  const helpList = state.helpRoleIds.length
-    ? state.helpRoleIds.map(id => `<@&${id}>`).join(", ")
+  const staffList = state.staffRoleIds.length
+    ? state.staffRoleIds.map(id => `<@&${id}>`).join(", ")
     : "everyone (no restriction)";
 
   await interaction.update({
@@ -206,8 +206,8 @@ export async function handleGeneralPanelSave(interaction: ButtonInteraction) {
         .setColor(0x00c851)
         .setTitle("\u2705 General Setup Saved")
         .setDescription(
-          `**Staff Role** \u2014 ${state.staffRoleId ? `<@&${state.staffRoleId}>` : "not set"}\n` +
-          `**Help Roles** \u2014 ${helpList}\n` +
+          `**Core Role** \u2014 ${state.coreRoleId ? `<@&${state.coreRoleId}>` : "not set"}\n` +
+          `**Staff Role** \u2014 ${staffList}\n` +
           `**Blocked Channels** \u2014 ${blockedList}`
         )
         .setFooter({ text: "Night Stars \u2022 General Setup" }),
@@ -217,7 +217,7 @@ export async function handleGeneralPanelSave(interaction: ButtonInteraction) {
 }
 
 export async function handleGeneralPanelReset(interaction: ButtonInteraction) {
-  const state: GeneralPanelState = { blockedChannels: [], helpRoleIds: [] };
+  const state: GeneralPanelState = { blockedChannels: [], staffRoleIds: [] };
   generalPanelState.set(interaction.user.id, state);
   await interaction.update({
     embeds: [buildGeneralPanelEmbed(state)],
