@@ -5,6 +5,7 @@ export const botConfigTable = pgTable("bot_config", {
   guildId: text("guild_id").notNull().unique(),
   systemRoleId: text("system_role_id"),
   jailRoleId: text("jail_role_id"),
+  memberRoleId: text("member_role_id"),
   gameManagerRoleId: text("game_manager_role_id"),
   assistanceCategoryId: text("assistance_category_id"),
   pvsCategoryId: text("pvs_category_id"),
