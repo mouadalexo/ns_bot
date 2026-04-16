@@ -202,18 +202,6 @@ export async function registerPanelCommands(client: Client) {
       option.setName("role-hammer").setDescription("Role allowed to use =jail and =unjail").setRequired(true),
     )
     .addRoleOption((option) =>
-      option.setName("role-hammer-2").setDescription("Additional hammer role").setRequired(false),
-    )
-    .addRoleOption((option) =>
-      option.setName("role-hammer-3").setDescription("Additional hammer role").setRequired(false),
-    )
-    .addRoleOption((option) =>
-      option.setName("role-hammer-4").setDescription("Additional hammer role").setRequired(false),
-    )
-    .addRoleOption((option) =>
-      option.setName("role-hammer-5").setDescription("Additional hammer role").setRequired(false),
-    )
-    .addRoleOption((option) =>
       option.setName("role-jailed").setDescription("Role given to jailed members").setRequired(true),
     )
     .addRoleOption((option) =>
@@ -225,6 +213,18 @@ export async function registerPanelCommands(client: Client) {
         .setDescription("Channel for jail and unjail logs")
         .addChannelTypes(ChannelType.GuildText)
         .setRequired(true),
+    )
+    .addRoleOption((option) =>
+      option.setName("role-hammer-2").setDescription("Additional hammer role").setRequired(false),
+    )
+    .addRoleOption((option) =>
+      option.setName("role-hammer-3").setDescription("Additional hammer role").setRequired(false),
+    )
+    .addRoleOption((option) =>
+      option.setName("role-hammer-4").setDescription("Additional hammer role").setRequired(false),
+    )
+    .addRoleOption((option) =>
+      option.setName("role-hammer-5").setDescription("Additional hammer role").setRequired(false),
     )
     .toJSON();
 
