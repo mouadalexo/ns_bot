@@ -19,6 +19,7 @@ import { isMainGuild } from "../../utils/guildFilter.js";
 
 const JAIL_PREFIX = "=";
 const CONFIRMATION_TTL = 3000;
+const CASE_TTL = 7000;
 const CLEANUP_HOURS = 10;
 
 async function getConfig(guildId: string) {
@@ -31,7 +32,7 @@ function buildEmbed(color: number, title: string, description: string) {
     .setColor(color)
     .setTitle(title)
     .setDescription(description)
-    .setFooter({ text: "Night Stars • Rejection System" })
+    .setFooter({ text: "Night Stars \u2022 Rejection System" })
     .setTimestamp();
 }
 
@@ -39,17 +40,17 @@ function simpleEmbed(color: number, description: string) {
   return new EmbedBuilder()
     .setColor(color)
     .setDescription(description)
-    .setFooter({ text: "Night Stars • Rejection System" });
+    .setFooter({ text: "Night Stars \u2022 Rejection System" });
 }
 
 function errorEmbed(description: string) {
   return simpleEmbed(0xff4d4d, description);
 }
 
-async function sendTemporary(message: Message, embed: EmbedBuilder) {
+async function sendTemporary(message: Message, embed: EmbedBuilder, ttl = CONFIRMATION_TTL) {
   await message.delete().catch(() => {});
   const sent = await message.channel.send({ embeds: [embed] }).catch(() => null);
-  if (sent) setTimeout(() => sent.delete().catch(() => {}), CONFIRMATION_TTL);
+  if (sent) setTimeout(() => sent.delete().catch(() => {}), ttl);
 }
 
 async function sendLog(message: Message, logsChannelId: string | null | undefined, embed: EmbedBuilder) {
@@ -282,24 +283,33 @@ async function handleReject(
     .returning({ id: jailCasesTable.id })
     .catch(() => [null]);
 
-  // Confirmation fires immediately — deletes command message, auto-deletes after 3s
+  // Send DM to rejected member
+  target.user.send({
+    embeds: [
+      new EmbedBuilder()
+        .setColor(0xff4d4d)
+        .setTitle("\u274C You have been rejected")
+        .setDescription(`**Reason**: ${reason}`)
+        .setFooter({ text: "Night Stars \u2022 Rejection System" })
+        .setTimestamp(),
+    ],
+  }).catch(() => {});
+
   await sendTemporary(message, simpleEmbed(0x5000ff, "This user was rejected."));
 
-  // Log fires immediately
-  const caseRef = caseRecord ? ` • Case #${caseRecord.id}` : "";
+  const caseRef = caseRecord ? ` \u2022 Case #${caseRecord.id}` : "";
   await sendLog(
     message,
     logsChannelId,
     buildEmbed(
       0x5000ff,
-      `🔨 Reject Log${caseRef}`,
+      `\uD83D\uDD28 Reject Log${caseRef}`,
       `**User**: ${displayName(target)}\n` +
       `**Hammer**: ${displayName(moderator)}\n` +
       `**Reason**: ${reason}`,
     ),
   );
 
-  // Message deletion runs fully in background — text + voice channels
   deleteRecentMessages(message, target.id);
 }
 
@@ -353,6 +363,18 @@ async function handleUnreject(
   await target.roles.remove(jailRoleId, `Unrejected by ${moderator.user.tag}`);
   await target.roles.add(memberRoleId, `Unrejected by ${moderator.user.tag}`);
 
+  // Send DM to unrejected member
+  target.user.send({
+    embeds: [
+      new EmbedBuilder()
+        .setColor(0x00c851)
+        .setTitle("\u2705 You have been unrejected")
+        .setDescription("Your rejection has been lifted. Welcome back!")
+        .setFooter({ text: "Night Stars \u2022 Rejection System" })
+        .setTimestamp(),
+    ],
+  }).catch(() => {});
+
   await sendTemporary(message, simpleEmbed(0x00c851, "This user was unrejected."));
 
   await sendLog(
@@ -360,7 +382,7 @@ async function handleUnreject(
     logsChannelId,
     buildEmbed(
       0x00c851,
-      "🔓 Unreject Log",
+      "\uD83D\uDD13 Unreject Log",
       `**User**: ${displayName(target)}\n` +
       `**Hammer**: ${displayName(moderator)}`,
     ),
@@ -389,7 +411,7 @@ async function handleCase(message: Message, moderator: GuildMember, args: string
 
   const jailRoleId = config?.jailRoleId;
   if (!jailRoleId || !target.roles.cache.has(jailRoleId)) {
-    await sendTemporary(message, simpleEmbed(0xff4d4d, `**${displayName(target)}** is not rejected.`));
+    await sendTemporary(message, simpleEmbed(0xff4d4d, `**${displayName(target)}** is not rejected.`), CASE_TTL);
     return;
   }
 
@@ -402,12 +424,13 @@ async function handleCase(message: Message, moderator: GuildMember, args: string
 
   const record = rows[0];
   if (!record) {
-    await sendTemporary(message, simpleEmbed(0x5000ff, `The rejection reason of **${displayName(target)}** is unknown (no record found).`));
+    await sendTemporary(message, simpleEmbed(0x5000ff, `The rejection reason of **${displayName(target)}** is unknown (no record found).`), CASE_TTL);
     return;
   }
 
   await sendTemporary(
     message,
     simpleEmbed(0x5000ff, `The rejection reason of **${displayName(target)}** is: ${record.reason}`),
+    CASE_TTL,
   );
 }
