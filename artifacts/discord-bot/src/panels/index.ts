@@ -58,6 +58,7 @@ import {
   handleGeneralPanelSave,
   handleGeneralPanelReset,
   getHelpRoleIds,
+  getStaffRoleId,
 } from "./general.js";
 import {
   openAnnPanel,
@@ -318,12 +319,17 @@ export async function registerPanelCommands(client: Client) {
       } else if (name === "prefix") {
         await openPrefixPanel(interaction as ChatInputCommandInteraction);
       } else if (name === "help") {
-        const helpRoleIds = await getHelpRoleIds(interaction.guildId!);
-        const member = interaction.guild!.members.cache.get(interaction.user.id) ?? await interaction.guild!.members.fetch(interaction.user.id).catch(() => null);
+        const [helpRoleIds, staffRoleId] = await Promise.all([
+          getHelpRoleIds(interaction.guildId!),
+          getStaffRoleId(interaction.guildId!),
+        ]);
+        const member = interaction.guild!.members.cache.get(interaction.user.id)
+          ?? await interaction.guild!.members.fetch(interaction.user.id).catch(() => null);
         const isAdmin = member?.permissions.has(8n) ?? false;
-        const hasRole = helpRoleIds.length === 0 || isAdmin || helpRoleIds.some(id => member?.roles.cache.has(id));
+        const isStaff = staffRoleId ? (member?.roles.cache.has(staffRoleId) ?? false) : false;
+        const hasRole = helpRoleIds.length === 0 || isAdmin || isStaff || helpRoleIds.some(id => member?.roles.cache.has(id));
         if (!hasRole) {
-          await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xff4d4d).setDescription("❌ You don’t have permission to use `/help`.")], ephemeral: true });
+          await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xff4d4d).setDescription("\u274C You don't have permission to use `/help`.")], ephemeral: true });
           return;
         }
         const { pvs, mgr, ctp, ann } = await getGuildPrefixes(interaction.guildId!);
@@ -388,7 +394,7 @@ export async function registerPanelCommands(client: Client) {
 async function handleGeneralCommand(interaction: ChatInputCommandInteraction) {
   if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator)) {
     await interaction.reply({
-      embeds: [new EmbedBuilder().setColor(0x5000ff).setDescription("❌ You need **Administrator** permission to use this.")],
+      embeds: [new EmbedBuilder().setColor(0x5000ff).setDescription("\u274C You need **Administrator** permission to use this.")],
       ephemeral: true,
     });
     return;
@@ -470,7 +476,7 @@ async function handleSetupRejectCommand(interaction: ChatInputCommandInteraction
           `**Logs Channel** — <#${logsChannel.id}>\n\n` +
           "Hammers can now use `=reject @user reason` and `=unreject @user`."
         )
-        .setFooter({ text: "Night Stars • Rejection System" })
+        .setFooter({ text: "Night Stars \u2022 Rejection System" })
         .setTimestamp(),
     ],
     ephemeral: true,
