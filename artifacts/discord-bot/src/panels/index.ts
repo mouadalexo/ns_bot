@@ -68,6 +68,13 @@ import {
   handleAnnColorModalSubmit,
   handleAnnColorBack,
 } from "./ann.js";
+import {
+  openJailPanel,
+  handleJailRoleSelect,
+  handleJailMemberRoleSelect,
+  handleJailPanelSave,
+  handleJailPanelReset,
+} from "./jail.js";
 
 function buildAllCommandsEmbed(pvs = "=", mgr = "+", ctp = "-", ann = "!") {
   return new EmbedBuilder()
@@ -115,6 +122,7 @@ function buildAllCommandsEmbed(pvs = "=", mgr = "+", ctp = "-", ann = "!") {
           "`/setup ctp-category` \u2014 Configure CTP games",
           "`/setup ctp-onetap` \u2014 Configure CTP Onetap",
           "`/setup staff` \u2014 Set staff role & blocked channels",
+          "`/setup jail` \u2014 Configure jail and member roles",
           "`/ann setup` \u2014 Configure announcements (roles, event colors)",
           "`/prefix` \u2014 View and edit command prefixes",
           "`/ping` \u2014 Check bot latency",
@@ -191,6 +199,7 @@ export async function registerPanelCommands(client: Client) {
     .addSubcommand((sub) => sub.setName("ctp-category").setDescription("Set up CTP for games with their own category"))
     .addSubcommand((sub) => sub.setName("ctp-onetap").setDescription("Set up CTP Onetap \u2014 temp voice game tagging"))
     .addSubcommand((sub) => sub.setName("staff").setDescription("Set the staff role \u2014 grants access to all bot systems"))
+    .addSubcommand((sub) => sub.setName("jail").setDescription("Set up jail and member roles"))
     .toJSON();
 
   const annCommand = new SlashCommandBuilder()
@@ -281,6 +290,7 @@ export async function registerPanelCommands(client: Client) {
         "cp_add_new", "cp_edit_game", "cp_remove_game", "cp_back_manage",
         "cp_open_details", "cp_save", "cp_reset",
         "gp_save", "gp_reset",
+        "jp_save", "jp_reset",
         "pfx_edit",
         "ap_save", "ap_reset", "ap_event_color_open", "ap_color_event_title", "ap_color_event_desc", "ap_color_event_add", "ap_back",
       ];
@@ -361,6 +371,8 @@ async function handleSetupCommand(interaction: ChatInputCommandInteraction) {
     await openCtpTagPanel(interaction as unknown as ButtonInteraction);
   } else if (sub === "staff") {
     await openGeneralSetupPanel(interaction as unknown as ButtonInteraction);
+  } else if (sub === "jail") {
+    await openJailPanel(interaction as unknown as ButtonInteraction);
   }
 }
 
@@ -408,6 +420,10 @@ async function handleButtonInteraction(interaction: ButtonInteraction) {
       await handleGeneralPanelSave(interaction);
     } else if (customId === "gp_reset") {
       await handleGeneralPanelReset(interaction);
+    } else if (customId === "jp_save") {
+      await handleJailPanelSave(interaction);
+    } else if (customId === "jp_reset") {
+      await handleJailPanelReset(interaction);
     } else if (customId === "pfx_edit") {
       await handlePrefixEditButton(interaction);
     } else if (customId === "ap_save") {
@@ -439,6 +455,10 @@ async function handleRoleSelectInteraction(interaction: RoleSelectMenuInteractio
       await handleCtpPanelSelect(interaction);
     } else if (customId === "gp_staff_role") {
       await handleGeneralStaffRoleSelect(interaction);
+    } else if (customId === "jp_jail_role") {
+      await handleJailRoleSelect(interaction);
+    } else if (customId === "jp_member_role") {
+      await handleJailMemberRoleSelect(interaction);
     } else if (customId.startsWith("ct_")) {
       await handleCtpTagRoleSelect(interaction);
     } else if (customId === "ap_ann_role") {
