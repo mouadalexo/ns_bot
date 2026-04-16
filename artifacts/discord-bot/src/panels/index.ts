@@ -116,7 +116,7 @@ function buildAllCommandsEmbed(pvs = "=", mgr = "+", ctp = "-", ann = "!") {
           "`/setup ctp-category` \u2014 Configure CTP games",
           "`/setup ctp-onetap` \u2014 Configure CTP Onetap",
           "`/general setup` \u2014 Set staff role & blocked channels",
-          "`/setup-jail` \u2014 Configure hammer, jailed, member, and logs channel",
+          "`/setup-reject` \u2014 Configure hammer, rejected, member, and logs channel",
           "`/ann setup` \u2014 Configure announcements (roles, event colors)",
           "`/prefix` \u2014 View and edit command prefixes",
           "`/ping` \u2014 Check bot latency",
@@ -124,6 +124,16 @@ function buildAllCommandsEmbed(pvs = "=", mgr = "+", ctp = "-", ann = "!") {
         inline: false,
       },
       { name: "\u200B", value: "** **", inline: false },
+            { name: "\u200B", value: "** **", inline: false },
+      {
+        name: "\uD83D\uDD12 Rejection System (Hammer Role required)",
+        value: [
+          "`=reject @user reason`" + " \u2014 Reject a member (removes their roles and applies the rejected role)",
+          "`=unreject @user`" + " \u2014 Remove rejection and restore the member role",
+          "`=case @user`" + " \u2014 Check the rejection reason of a currently rejected member",
+        ].join("\n"),
+        inline: false,
+      },
       {
         name: "\uD83C\uDFAE CTP \u2014 Call to Play (all members)",
         value: [
@@ -195,22 +205,22 @@ export async function registerPanelCommands(client: Client) {
     .toJSON();
 
   const setupJailCommand = new SlashCommandBuilder()
-    .setName("setup-jail")
-    .setDescription("Configure the jail system")
+    .setName("setup-reject")
+    .setDescription("Configure the rejection system")
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
     .addRoleOption((option) =>
-      option.setName("role-hammer").setDescription("Role allowed to use =jail and =unjail").setRequired(true),
+      option.setName("role-hammer").setDescription("Role allowed to use =reject and =unreject").setRequired(true),
     )
     .addRoleOption((option) =>
-      option.setName("role-jailed").setDescription("Role given to jailed members").setRequired(true),
+      option.setName("role-rejected").setDescription("Role given to rejected members").setRequired(true),
     )
     .addRoleOption((option) =>
-      option.setName("role-member").setDescription("Member role restored after unjail").setRequired(true),
+      option.setName("role-member").setDescription("Member role restored after unreject").setRequired(true),
     )
     .addChannelOption((option) =>
       option
         .setName("logs-channel")
-        .setDescription("Channel for jail and unjail logs")
+        .setDescription("Channel for rejection logs")
         .addChannelTypes(ChannelType.GuildText)
         .setRequired(true),
     )
@@ -287,8 +297,8 @@ export async function registerPanelCommands(client: Client) {
       const name = interaction.commandName;
       if (name === "setup") {
         await handleSetupCommand(interaction as ChatInputCommandInteraction);
-      } else if (name === "setup-jail") {
-        await handleSetupJailCommand(interaction as ChatInputCommandInteraction);
+      } else if (name === "setup-reject") {
+        await handleSetupRejectCommand(interaction as ChatInputCommandInteraction);
       } else if (name === "ann") {
         await handleAnnCommand(interaction as ChatInputCommandInteraction);
       } else if (name === "general") {
@@ -399,7 +409,7 @@ async function handleSetupCommand(interaction: ChatInputCommandInteraction) {
   }
 }
 
-async function handleSetupJailCommand(interaction: ChatInputCommandInteraction) {
+async function handleSetupRejectCommand(interaction: ChatInputCommandInteraction) {
   if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator)) {
     await interaction.reply({
       embeds: [new EmbedBuilder().setColor(0x5000ff).setDescription("\u274C You need **Administrator** permission to use this.")],
@@ -417,7 +427,7 @@ async function handleSetupJailCommand(interaction: ChatInputCommandInteraction) 
     interaction.options.getRole("role-hammer-5"),
   ].filter((role): role is NonNullable<typeof hammerRole> => !!role);
   const uniqueHammerRoleIds = [...new Set(hammerRoles.map((role) => role.id))];
-  const jailedRole = interaction.options.getRole("role-jailed", true);
+  const jailedRole = interaction.options.getRole("role-rejected", true);
   const memberRole = interaction.options.getRole("role-member", true);
   const logsChannel = interaction.options.getChannel("logs-channel", true);
   const guildId = interaction.guildId!;
@@ -442,15 +452,15 @@ async function handleSetupJailCommand(interaction: ChatInputCommandInteraction) 
     embeds: [
       new EmbedBuilder()
         .setColor(0x00c851)
-        .setTitle("\u2705 Jail System Configured")
+        .setTitle("\u2705 Rejection System Configured")
         .setDescription(
           `**Hammer Roles** — ${uniqueHammerRoleIds.map((id) => `<@&${id}>`).join(", ")}\n` +
-          `**Jailed Role** — <@&${jailedRole.id}>\n` +
+          `**Rejected Role** — <@&${jailedRole.id}>\n` +
           `**Member Role** — <@&${memberRole.id}>\n` +
           `**Logs Channel** — <#${logsChannel.id}>\n\n` +
-          "Hammers can now use `=jail @user reason` and `=unjail @user`."
+          "Hammers can now use `=reject @user reason` and `=unreject @user`."
         )
-        .setFooter({ text: "Night Stars \u2022 Jail System" })
+        .setFooter({ text: "Night Stars • Rejection System" })
         .setTimestamp(),
     ],
     ephemeral: true,

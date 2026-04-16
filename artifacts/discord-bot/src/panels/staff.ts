@@ -24,7 +24,7 @@ function buildStaffPanelEmbed(state: StaffPanelState) {
     .setDescription(
       `**Staff Role** — ${state.staffRoleId ? `<@&${state.staffRoleId}>` : "not set"}\n\n` +
       "Members with the staff role bypass all permission checks across all systems:\n" +
-      "- NSV: Can accept, deny, jail, or open tickets\n" +
+      "- NSV: Can accept, deny, reject, or open tickets\n" +
       "- PVS: Can create and delete premium voice rooms\n" +
       "- CTP: Can tag during cooldown"
     )
