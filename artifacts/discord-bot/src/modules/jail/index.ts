@@ -17,7 +17,7 @@ import { isMainGuild } from "../../utils/guildFilter.js";
 
 const JAIL_PREFIX = "=";
 const CONFIRMATION_TTL = 3000;
-const CLEANUP_DAYS = 7;
+const CLEANUP_DAYS = 1;
 
 async function getConfig(guildId: string) {
   const rows = await db.select().from(botConfigTable).where(eq(botConfigTable.guildId, guildId)).limit(1);
@@ -260,8 +260,6 @@ async function handleJail(
   if (removableRoles.size) await target.roles.remove(removableRoles, `Jailed by ${moderator.user.tag}: ${reason}`);
   await target.roles.add(jailRoleId, `Jailed by ${moderator.user.tag}: ${reason}`);
 
-  const deleted = await deleteRecentMessages(message, target.id);
-
   // Store case in DB
   const [caseRecord] = await db
     .insert(jailCasesTable)
@@ -276,23 +274,40 @@ async function handleJail(
     .returning({ id: jailCasesTable.id })
     .catch(() => [null]);
 
-  // Simple confirmation — auto-deletes after 3 seconds
+  // Send confirmation immediately — deletes original command message and auto-deletes after 3 seconds
   await sendTemporary(message, simpleEmbed(0x5000ff, "This user was jailed."));
 
-  // Clean log — no IDs, only deleted message count
+  // Delete recent messages in background so confirmation is not blocked
   const caseRef = caseRecord ? ` • Case #${caseRecord.id}` : "";
-  await sendLog(
-    message,
-    logsChannelId,
-    buildEmbed(
-      0x5000ff,
-      `🔨 Jail Log${caseRef}`,
-      `**User**: ${displayName(target)}\n` +
-      `**Hammer**: ${displayName(moderator)}\n` +
-      `**Reason**: ${reason}\n` +
-      `**Deleted messages**: ${deleted}`,
-    ),
-  );
+  deleteRecentMessages(message, target.id)
+    .then((deleted) => {
+      sendLog(
+        message,
+        logsChannelId,
+        buildEmbed(
+          0x5000ff,
+          `🔨 Jail Log${caseRef}`,
+          `**User**: ${displayName(target)}\n` +
+          `**Hammer**: ${displayName(moderator)}\n` +
+          `**Reason**: ${reason}\n` +
+          `**Deleted messages**: ${deleted}`,
+        ),
+      ).catch(() => {});
+    })
+    .catch(() => {
+      sendLog(
+        message,
+        logsChannelId,
+        buildEmbed(
+          0x5000ff,
+          `🔨 Jail Log${caseRef}`,
+          `**User**: ${displayName(target)}\n` +
+          `**Hammer**: ${displayName(moderator)}\n` +
+          `**Reason**: ${reason}\n` +
+          `**Deleted messages**: 0`,
+        ),
+      ).catch(() => {});
+    });
 }
 
 async function handleUnjail(
