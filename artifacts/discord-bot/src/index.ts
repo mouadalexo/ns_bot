@@ -23,6 +23,7 @@ async function ensureRuntimeSchema(): Promise<void> {
   await pool.query(`
     alter table bot_config add column if not exists member_role_id text;
     alter table bot_config add column if not exists jail_hammer_role_id text;
+    alter table bot_config add column if not exists jail_hammer_role_ids_json text;
     alter table bot_config add column if not exists jail_logs_channel_id text;
   `);
 }
