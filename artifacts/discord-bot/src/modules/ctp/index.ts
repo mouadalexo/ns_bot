@@ -81,14 +81,6 @@ export function registerCTPModule(client: Client) {
           return;
         }
 
-        const serverConfig = await db.select().from(botConfigTable).where(eq(botConfigTable.guildId, guildId)).limit(1);
-        const gameManagerRoleId = serverConfig[0]?.gameManagerRoleId;
-        const staffRoleId = serverConfig[0]?.staffRoleId;
-        const isGameManager = !!(
-          (gameManagerRoleId && member.roles.cache.has(gameManagerRoleId)) ||
-          (staffRoleId && member.roles.cache.has(staffRoleId))
-        );
-
         const now = new Date();
         const cooldownRecord = await db
           .select()
@@ -96,7 +88,7 @@ export function registerCTPModule(client: Client) {
           .where(and(eq(ctpCooldownsTable.guildId, guildId), eq(ctpCooldownsTable.categoryId, config.categoryId)))
           .limit(1);
 
-        if (!isGameManager && cooldownRecord.length) {
+        if (cooldownRecord.length) {
           const elapsed = (now.getTime() - cooldownRecord[0].lastUsedAt.getTime()) / 1000;
           if (elapsed < config.cooldownSeconds) {
             const remaining = Math.ceil(config.cooldownSeconds - elapsed);
@@ -106,7 +98,7 @@ export function registerCTPModule(client: Client) {
                   .setColor(0x5000ff)
                   .setTitle("Cooldown Active")
                   .setDescription(`The **${config.gameName}** tag was used recently.\nYou can re-tag in **${formatSeconds(remaining)}**.`)
-                  .setFooter({ text: `Cooldown: ${formatSeconds(config.cooldownSeconds)} • Night Stars CTP` }),
+                  .setFooter({ text: `Cooldown: ${formatSeconds(config.cooldownSeconds)} \u2022 Night Stars CTP` }),
               ],
             });
             setTimeout(() => notice.delete().catch(() => {}), 8000);
@@ -126,9 +118,8 @@ export function registerCTPModule(client: Client) {
           allowedMentions: { roles: [config.gameRoleId] },
         });
 
-        const confirmMsg = isGameManager ? "Tag sent! (Cooldown bypassed)" : `Tag sent! You can re-tag after **${formatSeconds(config.cooldownSeconds)}**.`;
         const confirm = await (message.channel as TextChannel).send({
-          embeds: [new EmbedBuilder().setColor(0x5000ff).setDescription(`✅ ${confirmMsg}`)],
+          embeds: [new EmbedBuilder().setColor(0x5000ff).setDescription(`\u2705 Tag sent! You can re-tag after **${formatSeconds(config.cooldownSeconds)}**.`)],
         });
         setTimeout(() => confirm.delete().catch(() => {}), 6000);
 
@@ -157,12 +148,10 @@ export function registerCTPModule(client: Client) {
         if (!tvConfig || !tvConfig.enabled || !tvConfig.categoryId) return;
         if (voiceChannel.parentId !== tvConfig.categoryId) return;
 
-        // Check temp voice games list first (added to temp = can be used here regardless of CTP category)
         const tvGames = await db.select().from(ctpTempVoiceGamesTable).where(eq(ctpTempVoiceGamesTable.guildId, guildId));
         const tvMatch = tvGames.find((g) => g.gameName.toLowerCase() === gameInput);
 
         if (!tvMatch) {
-          // Not in temp voice list — if it has a CTP category, redirect
           const allCTPGames = await db
             .select()
             .from(ctpCategoriesTable)
@@ -182,7 +171,6 @@ export function registerCTPModule(client: Client) {
           return;
         }
 
-        // Cooldown check
         const now = new Date();
         const [cooldownRecord] = await db
           .select()
@@ -200,7 +188,7 @@ export function registerCTPModule(client: Client) {
                   .setColor(0x5000ff)
                   .setTitle("Cooldown Active")
                   .setDescription(`The **${tvMatch.gameName}** tag was used recently.\nYou can re-tag in **${formatSeconds(remaining)}**.`)
-                  .setFooter({ text: `Cooldown: ${formatSeconds(tvConfig.cooldownSeconds)} • Night Stars CTP` }),
+                  .setFooter({ text: `Cooldown: ${formatSeconds(tvConfig.cooldownSeconds)} \u2022 Night Stars CTP` }),
               ],
             });
             setTimeout(() => notice.delete().catch(() => {}), 8000);
