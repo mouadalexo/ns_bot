@@ -45,8 +45,8 @@ function errorEmbed(description: string) {
 }
 
 async function sendTemporary(message: Message, embed: EmbedBuilder) {
-  const sent = await message.channel.send({ embeds: [embed] }).catch(() => null);
   await message.delete().catch(() => {});
+  const sent = await message.channel.send({ embeds: [embed] }).catch(() => null);
   if (sent) setTimeout(() => sent.delete().catch(() => {}), CONFIRMATION_TTL);
 }
 
