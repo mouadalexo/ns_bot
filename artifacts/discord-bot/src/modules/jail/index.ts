@@ -11,12 +11,12 @@ import type {
   TextChannel,
 } from "discord.js";
 import { db } from "@workspace/db";
-import { botConfigTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { botConfigTable, jailCasesTable } from "@workspace/db";
+import { eq, and } from "drizzle-orm";
 import { isMainGuild } from "../../utils/guildFilter.js";
 
 const JAIL_PREFIX = "=";
-const CONFIRMATION_TTL = 5000;
+const CONFIRMATION_TTL = 3000;
 const CLEANUP_DAYS = 7;
 
 async function getConfig(guildId: string) {
@@ -33,8 +33,15 @@ function buildEmbed(color: number, title: string, description: string) {
     .setTimestamp();
 }
 
+function simpleEmbed(color: number, description: string) {
+  return new EmbedBuilder()
+    .setColor(color)
+    .setDescription(description)
+    .setFooter({ text: "Night Stars • Jail System" });
+}
+
 function errorEmbed(description: string) {
-  return buildEmbed(0xff4d4d, "Action blocked", description);
+  return simpleEmbed(0xff4d4d, description);
 }
 
 async function sendTemporary(message: Message, embed: EmbedBuilder) {
@@ -90,11 +97,13 @@ function findUnmanageableRoles(target: GuildMember, jailRoleId: string) {
   );
 }
 
+function displayName(member: GuildMember): string {
+  return member.displayName || member.user.username;
+}
+
 async function deleteRecentMessages(message: Message, targetId: string) {
   const cutoff = Date.now() - CLEANUP_DAYS * 24 * 60 * 60 * 1000;
   let deleted = 0;
-  let scannedChannels = 0;
-  let skippedChannels = 0;
 
   await message.guild!.channels.fetch().catch(() => null);
 
@@ -106,11 +115,9 @@ async function deleteRecentMessages(message: Message, targetId: string) {
   for (const channel of channels.values()) {
     const permissions = channel.permissionsFor(message.guild!.members.me!);
     if (!permissions?.has(PermissionsBitField.Flags.ViewChannel) || !permissions.has(PermissionsBitField.Flags.ManageMessages)) {
-      skippedChannels += 1;
       continue;
     }
 
-    scannedChannels += 1;
     let before: string | undefined;
 
     for (let page = 0; page < 25; page += 1) {
@@ -129,7 +136,7 @@ async function deleteRecentMessages(message: Message, targetId: string) {
     }
   }
 
-  return { deleted, scannedChannels, skippedChannels };
+  return deleted;
 }
 
 export function registerJailModule(client: Client) {
@@ -142,10 +149,16 @@ export function registerJailModule(client: Client) {
 
       const content = message.content.slice(JAIL_PREFIX.length).trim();
       const lower = content.toLowerCase();
-      if (!lower.startsWith("jail ") && !lower.startsWith("unjail ")) return;
+
+      if (!lower.startsWith("jail ") && !lower.startsWith("unjail ") && !lower.startsWith("case ")) return;
 
       const member = message.member;
       if (!member) return;
+
+      if (lower.startsWith("case ")) {
+        await handleCase(message, member, content.slice(5).trim());
+        return;
+      }
 
       const config = await getConfig(message.guild.id);
       const hammerRoleIds = getHammerRoleIds(config);
@@ -171,7 +184,13 @@ export function registerJailModule(client: Client) {
   });
 }
 
-async function handleJail(message: Message, moderator: GuildMember, args: string, jailRoleId: string, logsChannelId?: string | null) {
+async function handleJail(
+  message: Message,
+  moderator: GuildMember,
+  args: string,
+  jailRoleId: string,
+  logsChannelId?: string | null,
+) {
   const targetId = extractMentionedMemberId(args);
   const reason = extractReason(args);
 
@@ -196,13 +215,19 @@ async function handleJail(message: Message, moderator: GuildMember, args: string
     return;
   }
 
+  // Check if already jailed
+  if (target.roles.cache.has(jailRoleId)) {
+    await sendTemporary(message, errorEmbed(`**${displayName(target)}** is already jailed.`));
+    return;
+  }
+
   if (!canModerateTarget(moderator, target)) {
     await sendTemporary(message, errorEmbed("You cannot jail someone with an equal or higher role than yours."));
     return;
   }
 
   if (!target.manageable) {
-    await sendTemporary(message, errorEmbed("I cannot manage this member. Move my bot role above this member’s highest role."));
+    await sendTemporary(message, errorEmbed("I cannot manage this member. Move my bot role above this member's highest role."));
     return;
   }
 
@@ -229,37 +254,55 @@ async function handleJail(message: Message, moderator: GuildMember, args: string
     return;
   }
 
-  const removableRoles = target.roles.cache.filter((role) => role.id !== target.guild.id && role.id !== jailRoleId && !role.managed && role.editable);
+  const removableRoles = target.roles.cache.filter(
+    (role) => role.id !== target.guild.id && role.id !== jailRoleId && !role.managed && role.editable,
+  );
   if (removableRoles.size) await target.roles.remove(removableRoles, `Jailed by ${moderator.user.tag}: ${reason}`);
   await target.roles.add(jailRoleId, `Jailed by ${moderator.user.tag}: ${reason}`);
-  const cleanup = await deleteRecentMessages(message, target.id);
 
-  const confirmation = buildEmbed(
-    0x5000ff,
-    "🔨 Member Jailed",
-    `<@${target.id}> has been jailed by <@${moderator.id}>.\n\n` +
-    `**Reason**\n${reason}\n\n` +
-    `**Cleanup**\nDeleted **${cleanup.deleted}** message(s) from the last **${CLEANUP_DAYS} days**.`,
-  );
+  const deleted = await deleteRecentMessages(message, target.id);
 
-  await sendTemporary(message, confirmation);
+  // Store case in DB
+  const [caseRecord] = await db
+    .insert(jailCasesTable)
+    .values({
+      guildId: message.guild!.id,
+      targetId: target.id,
+      targetTag: displayName(target),
+      moderatorId: moderator.id,
+      moderatorTag: displayName(moderator),
+      reason,
+    })
+    .returning({ id: jailCasesTable.id })
+    .catch(() => [null]);
+
+  // Simple confirmation — auto-deletes after 3 seconds
+  await sendTemporary(message, simpleEmbed(0x5000ff, "This user was jailed."));
+
+  // Clean log — no IDs, only deleted message count
+  const caseRef = caseRecord ? ` • Case #${caseRecord.id}` : "";
   await sendLog(
     message,
     logsChannelId,
     buildEmbed(
       0x5000ff,
-      "🔨 Jail Log",
-      `**Member**: <@${target.id}> (${target.id})\n` +
-      `**Hammer**: <@${moderator.id}> (${moderator.id})\n` +
+      `🔨 Jail Log${caseRef}`,
+      `**User**: ${displayName(target)}\n` +
+      `**Hammer**: ${displayName(moderator)}\n` +
       `**Reason**: ${reason}\n` +
-      `**Messages deleted**: ${cleanup.deleted}\n` +
-      `**Channels scanned**: ${cleanup.scannedChannels}\n` +
-      `**Channels skipped**: ${cleanup.skippedChannels}`,
+      `**Deleted messages**: ${deleted}`,
     ),
   );
 }
 
-async function handleUnjail(message: Message, moderator: GuildMember, args: string, jailRoleId: string, memberRoleId: string, logsChannelId?: string | null) {
+async function handleUnjail(
+  message: Message,
+  moderator: GuildMember,
+  args: string,
+  jailRoleId: string,
+  memberRoleId: string,
+  logsChannelId?: string | null,
+) {
   const targetId = extractMentionedMemberId(args);
   if (!targetId) {
     await sendTemporary(message, errorEmbed("Usage: `=unjail @user`"));
@@ -272,13 +315,19 @@ async function handleUnjail(message: Message, moderator: GuildMember, args: stri
     return;
   }
 
+  // Check if not jailed
+  if (!target.roles.cache.has(jailRoleId)) {
+    await sendTemporary(message, errorEmbed(`**${displayName(target)}** is not jailed.`));
+    return;
+  }
+
   if (!canModerateTarget(moderator, target)) {
     await sendTemporary(message, errorEmbed("You cannot unjail someone with an equal or higher role than yours."));
     return;
   }
 
   if (!target.manageable) {
-    await sendTemporary(message, errorEmbed("I cannot manage this member. Move my bot role above this member’s highest role."));
+    await sendTemporary(message, errorEmbed("I cannot manage this member. Move my bot role above this member's highest role."));
     return;
   }
 
@@ -297,23 +346,59 @@ async function handleUnjail(message: Message, moderator: GuildMember, args: stri
   await target.roles.remove(jailRoleId, `Unjailed by ${moderator.user.tag}`);
   await target.roles.add(memberRoleId, `Unjailed by ${moderator.user.tag}`);
 
-  const confirmation = buildEmbed(
-    0x00c851,
-    "🔓 Member Unjailed",
-    `<@${target.id}> has been released by <@${moderator.id}>.\n\n` +
-    `The jailed role was removed and <@&${memberRoleId}> was restored.`,
-  );
+  // Simple confirmation — auto-deletes after 3 seconds
+  await sendTemporary(message, simpleEmbed(0x00c851, "This user was unjailed."));
 
-  await sendTemporary(message, confirmation);
+  // Clean log — no IDs
   await sendLog(
     message,
     logsChannelId,
     buildEmbed(
       0x00c851,
       "🔓 Unjail Log",
-      `**Member**: <@${target.id}> (${target.id})\n` +
-      `**Hammer**: <@${moderator.id}> (${moderator.id})\n` +
-      `**Member role restored**: <@&${memberRoleId}>`,
+      `**User**: ${displayName(target)}\n` +
+      `**Hammer**: ${displayName(moderator)}`,
+    ),
+  );
+}
+
+async function handleCase(message: Message, moderator: GuildMember, args: string) {
+  const caseNumber = parseInt(args.trim(), 10);
+  if (isNaN(caseNumber) || caseNumber < 1) {
+    await sendTemporary(message, errorEmbed("Usage: `=case <number>`"));
+    return;
+  }
+
+  const config = await getConfig(message.guild!.id);
+  const hammerRoleIds = getHammerRoleIds(config);
+  if (!hasJailPermission(moderator, hammerRoleIds)) {
+    await sendTemporary(message, errorEmbed("You need one of the configured **Hammer Roles** to view cases."));
+    return;
+  }
+
+  const rows = await db
+    .select()
+    .from(jailCasesTable)
+    .where(and(eq(jailCasesTable.id, caseNumber), eq(jailCasesTable.guildId, message.guild!.id)))
+    .limit(1);
+
+  const record = rows[0];
+  if (!record) {
+    await sendTemporary(message, errorEmbed(`Case #${caseNumber} not found.`));
+    return;
+  }
+
+  const timeStr = `<t:${Math.floor(record.jailedAt.getTime() / 1000)}:F>`;
+
+  await sendTemporary(
+    message,
+    buildEmbed(
+      0x5000ff,
+      `📋 Case #${record.id}`,
+      `**Jailed user**: ${record.targetTag}\n` +
+      `**Hammer**: ${record.moderatorTag}\n` +
+      `**Reason**: ${record.reason}\n` +
+      `**Time**: ${timeStr}`,
     ),
   );
 }
