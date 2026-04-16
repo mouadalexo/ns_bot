@@ -323,11 +323,12 @@ export async function registerPanelCommands(client: Client) {
           getHelpRoleIds(interaction.guildId!),
           getStaffRoleId(interaction.guildId!),
         ]);
-        const member = interaction.guild!.members.cache.get(interaction.user.id)
-          ?? await interaction.guild!.members.fetch(interaction.user.id).catch(() => null);
-        const isAdmin = member?.permissions.has(8n) ?? false;
-        const isStaff = staffRoleId ? (member?.roles.cache.has(staffRoleId) ?? false) : false;
-        const hasRole = helpRoleIds.length === 0 || isAdmin || isStaff || helpRoleIds.some(id => member?.roles.cache.has(id));
+        const isAdmin = interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator) ?? false;
+        const memberRoleIds: string[] = interaction.member
+          ? (Array.isArray(interaction.member.roles) ? interaction.member.roles : [...interaction.member.roles.cache.keys()])
+          : [];
+        const isCore = staffRoleId ? memberRoleIds.includes(staffRoleId) : false;
+        const hasRole = helpRoleIds.length === 0 || isAdmin || isCore || helpRoleIds.some(id => memberRoleIds.includes(id));
         if (!hasRole) {
           await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xff4d4d).setDescription("\u274C You don't have permission to use `/help`.")], ephemeral: true });
           return;
