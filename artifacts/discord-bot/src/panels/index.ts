@@ -119,7 +119,7 @@ function buildAllCommandsEmbed(pvs = "=", mgr = "+", ctp = "-", ann = "!") {
           "`/setup ctp-category` \u2014 Configure CTP games",
           "`/setup ctp-onetap` \u2014 Configure CTP Onetap",
           "`/general setup` \u2014 Set staff role & blocked channels",
-          "`/setup-reject` \u2014 Configure hammer, rejected, member, and logs channel",
+          "`/setup-jail` \u2014 Configure hammer, jail, member, and logs channel",
           "`/ann setup` \u2014 Configure announcements (roles, event colors)",
           "`/prefix` \u2014 View and edit command prefixes",
           "`/ping` \u2014 Check bot latency",
@@ -208,7 +208,7 @@ export async function registerPanelCommands(client: Client) {
     .toJSON();
 
   const setupJailCommand = new SlashCommandBuilder()
-    .setName("setup-reject")
+    .setName("setup-jail")
     .setDescription("Configure the jail system")
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
     .addRoleOption((option) =>
@@ -300,7 +300,7 @@ export async function registerPanelCommands(client: Client) {
       const name = interaction.commandName;
       if (name === "setup") {
         await handleSetupCommand(interaction as ChatInputCommandInteraction);
-      } else if (name === "setup-reject") {
+      } else if (name === "setup-jail") {
         await handleSetupRejectCommand(interaction as ChatInputCommandInteraction);
       } else if (name === "ann") {
         await handleAnnCommand(interaction as ChatInputCommandInteraction);
