@@ -359,9 +359,9 @@ export async function registerPanelCommands(client: Client) {
         "gp_save", "gp_reset",
         "pfx_edit",
         "ap_save", "ap_reset", "ap_event_color_open", "ap_color_event_title", "ap_color_event_desc", "ap_color_event_add", "ap_back",
-        "rg_add", "rg_preview", "rg_delete", "rg_save", "rg_cancel", "rg_back",
+        "rg_add", "rg_edit", "rg_preview", "rg_delete", "rg_save", "rg_cancel", "rg_back",
       ];
-      if (panelIds.includes(interaction.customId) || interaction.customId.startsWith("ct_")) {
+      if (panelIds.includes(interaction.customId) || interaction.customId.startsWith("ct_") || interaction.customId.startsWith("rg_")) {
         await handleButtonInteraction(interaction as ButtonInteraction);
       }
       return;
@@ -730,6 +730,7 @@ function buildRoleGiverPanelRows() {
   return [
     new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder().setCustomId("rg_add").setLabel("Add Role").setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId("rg_edit").setLabel("Edit Role").setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId("rg_preview").setLabel("Preview Commands").setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId("rg_delete").setLabel("Delete Role").setStyle(ButtonStyle.Danger),
     ),
@@ -790,6 +791,24 @@ async function handleRoleGiverButton(interaction: ButtonInteraction) {
     return;
   }
 
+  if (interaction.customId === "rg_edit") {
+    const modal = new ModalBuilder().setCustomId("rg_edit_modal").setTitle("Edit Role Giver");
+    modal.addComponents(
+      new ActionRowBuilder<TextInputBuilder>().addComponents(
+        new TextInputBuilder()
+          .setCustomId("rg_edit_command")
+          .setLabel("Command name to edit")
+          .setPlaceholder("legend  ->  =legend @user")
+          .setStyle(TextInputStyle.Short)
+          .setMinLength(2)
+          .setMaxLength(32)
+          .setRequired(true),
+      ),
+    );
+    await interaction.showModal(modal);
+    return;
+  }
+
   if (interaction.customId === "rg_delete") {
     const modal = new ModalBuilder().setCustomId("rg_delete_modal").setTitle("Delete Role Giver");
     modal.addComponents(
@@ -837,6 +856,42 @@ async function handleRoleGiverModalSubmit(interaction: ModalSubmitInteraction) {
       commandName,
       linkedCategory: linkedCategoryRaw ? linkedCategoryRaw.toLowerCase() : null,
       giverRoleIds: [],
+    };
+    roleGiverDrafts.set(roleGiverDraftKey(interaction), draft);
+    await interaction.reply({ embeds: [buildRoleGiverDraftEmbed(draft)], components: buildRoleGiverDraftRows(), ephemeral: true });
+    return;
+  }
+
+  if (interaction.customId === "rg_edit_modal") {
+    const commandName = normalizeRoleGiverCommandName(interaction.fields.getTextInputValue("rg_edit_command"));
+    if (!validRoleGiverCommandName(commandName)) {
+      await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xff4d4d).setDescription("Command must be 2-32 characters: letters, numbers, `_`, or `-` only. Example: `legend`.")], ephemeral: true });
+      return;
+    }
+
+    const result = await pool.query<{
+      command_name: string;
+      target_role_id: string;
+      giver_role_ids_json: string;
+      linked_category: string | null;
+    }>(
+      "select command_name, target_role_id, giver_role_ids_json, linked_category from role_giver_rules where guild_id = $1 and command_name = $2 and enabled = true limit 1",
+      [interaction.guildId!, commandName],
+    );
+
+    const row = result.rows[0];
+    if (!row) {
+      await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xff4d4d).setDescription(`No role-giver command named \`=${commandName}\` was found.`)], ephemeral: true });
+      return;
+    }
+
+    let giverRoleIds: string[] = [];
+    try { giverRoleIds = JSON.parse(row.giver_role_ids_json); } catch {}
+    const draft: RoleGiverDraft = {
+      commandName: row.command_name,
+      linkedCategory: row.linked_category,
+      targetRoleId: row.target_role_id,
+      giverRoleIds,
     };
     roleGiverDrafts.set(roleGiverDraftKey(interaction), draft);
     await interaction.reply({ embeds: [buildRoleGiverDraftEmbed(draft)], components: buildRoleGiverDraftRows(), ephemeral: true });
@@ -985,6 +1040,7 @@ async function handleRoleGiverPreview(interaction: ButtonInteraction) {
     components: [
       new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder().setCustomId("rg_add").setLabel("Add Role").setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId("rg_edit").setLabel("Edit Role").setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId("rg_delete").setLabel("Delete Role").setStyle(ButtonStyle.Danger),
         new ButtonBuilder().setCustomId("rg_back").setLabel("Back to Panel").setStyle(ButtonStyle.Secondary),
       ),
