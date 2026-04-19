@@ -559,6 +559,8 @@ async function handleButtonInteraction(interaction: ButtonInteraction) {
       await openAnnColorModal(interaction, "event_add");
     } else if (customId === "ap_back") {
       await handleAnnColorBack(interaction);
+    } else if (customId.startsWith("rg_")) {
+      await handleRoleGiverButton(interaction);
     }
   } catch (err) {
     console.error("Panel button error:", err);
