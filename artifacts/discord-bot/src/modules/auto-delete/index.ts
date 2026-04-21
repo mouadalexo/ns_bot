@@ -259,10 +259,16 @@ function buildWordRegex(words: string[]): RegExp | null {
 }
 
 async function handleAutoDeleteMessage(message: Message) {
-  if (!message.guild || message.author.bot) return;
+  if (!message.guild) return;
   if (!isMainGuild(message.guild.id)) return;
-  if (!message.member) return;
-  if (message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return;
+  // Never delete this bot's own messages
+  if (message.author.id === message.client.user?.id) return;
+  const isBot = message.author.bot;
+  // Humans without a cached member object can't be permission-checked
+  if (!isBot && !message.member) return;
+  // Admin bypass applies to humans only — bots are always subject to filtering
+  // even when they hold Administrator permission.
+  if (!isBot && message.member!.permissions.has(PermissionsBitField.Flags.Administrator)) return;
 
   const guildId = message.guild.id;
   const channelId = message.channelId;

@@ -1,23 +1,30 @@
 import { Client, ChannelType, PermissionFlagsBits, VoiceChannel } from "discord.js";
 
-const MAIN_GUILD_ID = process.env.MAIN_GUILD_ID;
+const ENV_GUILD_ID = process.env.MAIN_GUILD_ID;
 const CHANNEL_PREFIX = "👥";
 
 let statsChannel: VoiceChannel | null = null;
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+function resolveGuildId(client: Client): string | null {
+  if (ENV_GUILD_ID) return ENV_GUILD_ID;
+  const first = client.guilds.cache.first();
+  return first?.id ?? null;
+}
 
 function formatName(count: number): string {
   return `👥 Members: ${count.toLocaleString()}`;
 }
 
 async function findOrCreateChannel(client: Client): Promise<VoiceChannel | null> {
-  if (!MAIN_GUILD_ID) {
-    console.warn("[Stats] MAIN_GUILD_ID not set — stats channel disabled.");
+  const guildId = resolveGuildId(client);
+  if (!guildId) {
+    console.warn("[Stats] No guild available — stats channel disabled.");
     return null;
   }
 
   try {
-    const guild = await client.guilds.fetch(MAIN_GUILD_ID);
+    const guild = await client.guilds.fetch(guildId);
     await guild.channels.fetch();
 
     const existing = guild.channels.cache.find(
@@ -51,10 +58,11 @@ async function findOrCreateChannel(client: Client): Promise<VoiceChannel | null>
 }
 
 async function updateChannel(client: Client): Promise<void> {
-  if (!MAIN_GUILD_ID) return;
+  const guildId = resolveGuildId(client);
+  if (!guildId) return;
 
   try {
-    const guild = await client.guilds.fetch(MAIN_GUILD_ID);
+    const guild = await client.guilds.fetch(guildId);
     const count = guild.memberCount;
     const newName = formatName(count);
 
@@ -84,12 +92,14 @@ export function registerStatsModule(client: Client): void {
   });
 
   client.on("guildMemberAdd", (member) => {
-    if (member.guild.id !== MAIN_GUILD_ID) return;
+    const guildId = resolveGuildId(client);
+    if (!guildId || member.guild.id !== guildId) return;
     scheduleUpdate(client);
   });
 
   client.on("guildMemberRemove", (member) => {
-    if (member.guild.id !== MAIN_GUILD_ID) return;
+    const guildId = resolveGuildId(client);
+    if (!guildId || member.guild.id !== guildId) return;
     scheduleUpdate(client);
   });
 }

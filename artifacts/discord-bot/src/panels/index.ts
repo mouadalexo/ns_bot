@@ -133,6 +133,14 @@ function buildAllCommandsEmbed(pvs = "=", mgr = "+", ctp = "-", ann = "!") {
         value: "`A @user` \u2014 Show a member's global & server avatar",
         inline: false,
       },
+      {
+        name: "\uD83C\uDFA4 Stage Lock (Admin or Event Hoster)",
+        value: [
+          "`=stagelock`" + " \u2014 In a voice/stage channel: block the Member role from connecting",
+          "`=stageunlock`" + " \u2014 Re-allow the Member role to connect to that channel",
+        ].join("\n"),
+        inline: false,
+      },
       { name: "\u200B", value: "** **", inline: false },
             { name: "\u200B", value: "** **", inline: false },
       {
