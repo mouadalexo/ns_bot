@@ -318,13 +318,13 @@ function buildRootEmbed(rules: AutoDeleteRule[], words: ServerWords | null) {
     .setTitle("🛡️ Auto-Delete Setup")
     .setDescription(
       "Manage what NS Bot deletes automatically.\n\n" +
-      "**Block Words (server-wide)** — words deleted everywhere.\n" +
+      "**Block Words & Phrases (server-wide)** — messages containing these are deleted everywhere.\n" +
       "**Channel rules** — delete links/images/gifs/videos/attachments/invites in a specific channel.\n" +
       "**Category rules** — same, applied to all channels in a category.\n\n" +
       "Each rule can target specific roles (apply only to them), and ignore other roles.",
     )
     .addFields(
-      { name: "🚫 Server block words", value: wordCount ? `${wordCount} word(s)` : "None set", inline: true },
+      { name: "🚫 Server block words/phrases", value: wordCount ? `${wordCount} entr${wordCount === 1 ? "y" : "ies"}` : "None set", inline: true },
       { name: "📺 Channel rules", value: `${channelCount}`, inline: true },
       { name: "📁 Category rules", value: `${categoryCount}`, inline: true },
     )
@@ -335,7 +335,7 @@ function buildRootRows(rules: AutoDeleteRule[]) {
   const rows: ActionRowBuilder<any>[] = [];
   rows.push(
     new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder().setCustomId("ad_open_words").setLabel("🚫 Block Words").setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId("ad_open_words").setLabel("🚫 Block Words & Phrases").setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId("ad_add_channel").setLabel("➕ Add Channel Rule").setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId("ad_add_category").setLabel("➕ Add Category Rule").setStyle(ButtonStyle.Success),
     ),
@@ -387,9 +387,9 @@ function buildWordsEmbed(words: string[], ignored: string[]) {
     .setColor(BRAND)
     .setTitle("🚫 Server Block Words")
     .setDescription(
-      `**Words (${words.length})**\n${words.length ? words.map((w) => `\`${w}\``).join(" ") : "_None set_"}\n\n` +
+      `**Entries (${words.length})**\n${words.length ? words.map((w) => `\`${w}\``).join(" \u2022 ") : "_None set_"}\n\n` +
       `**Ignored roles**\n${ignored.length ? ignored.map((id) => `<@&${id}>`).join(" ") : "_None_"}\n\n` +
-      "Members posting these words anywhere on the server will have their messages deleted, except admins and ignored roles.",
+      "Members posting any of these words or phrases anywhere on the server will have their messages deleted, except admins and ignored roles.",
     )
     .setFooter({ text: "Night Stars • Auto-Delete" });
 }
@@ -397,7 +397,7 @@ function buildWordsEmbed(words: string[], ignored: string[]) {
 function buildWordsRows() {
   return [
     new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder().setCustomId("ad_words_edit").setLabel("✏️ Edit Words").setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId("ad_words_edit").setLabel("✏️ Edit Words/Phrases").setStyle(ButtonStyle.Primary),
     ),
     new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(
       new RoleSelectMenuBuilder().setCustomId("ad_words_ignored").setPlaceholder("Set ignored roles…").setMinValues(0).setMaxValues(10),
@@ -421,10 +421,10 @@ async function openWordsPanel(interaction: ButtonInteraction) {
 async function openWordsModal(interaction: ButtonInteraction) {
   const guildId = interaction.guildId!;
   const draft = wordDrafts.get(draftKey(guildId, interaction.user.id)) ?? { words: [], ignoredRoleIds: [] };
-  const modal = new ModalBuilder().setCustomId("ad_words_modal").setTitle("Edit Block Words");
+  const modal = new ModalBuilder().setCustomId("ad_words_modal").setTitle("Edit Block Words & Phrases");
   const input = new TextInputBuilder()
     .setCustomId("words")
-    .setLabel("One word per line (or comma-separated)")
+    .setLabel("One word or phrase per line")
     .setStyle(TextInputStyle.Paragraph)
     .setRequired(false)
     .setValue(draft.words.join("\n"))
@@ -437,7 +437,7 @@ async function handleWordsModalSubmit(interaction: ModalSubmitInteraction) {
   const guildId = interaction.guildId!;
   const raw = interaction.fields.getTextInputValue("words");
   const words = raw
-    .split(/[\n,]/)
+    .split(/\n/)
     .map((w) => w.trim().toLowerCase())
     .filter((w) => w.length > 0)
     .filter((w, i, a) => a.indexOf(w) === i);
