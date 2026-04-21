@@ -15,6 +15,8 @@ import { registerStatsModule } from "./modules/stats/index.js";
 import { registerAnnouncementsModule } from "./modules/announcements/index.js";
 import { registerJailModule } from "./modules/jail/index.js";
 import { registerRoleGiverModule } from "./modules/role-giver/index.js";
+import { registerAvatarModule } from "./modules/avatar/index.js";
+import { registerAutoDeleteModule } from "./modules/auto-delete/index.js";
 import { registerPanelCommands } from "./panels/index.js";
 
 const BOT_INSTANCE_LOCK_KEY = 489215731;
@@ -249,5 +251,7 @@ async function startBot(token: string): Promise<void> {
     registerAnnouncementsModule(client);
     registerJailModule(client);
     registerRoleGiverModule(client);
+    registerAvatarModule(client);
+    registerAutoDeleteModule(client).catch((err) => console.error("[Bot] AutoDelete init error:", err));
   });
 }

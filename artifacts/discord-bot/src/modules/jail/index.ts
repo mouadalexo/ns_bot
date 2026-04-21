@@ -304,8 +304,8 @@ async function handleJail(
     buildEmbed(
       0x5000ff,
       `\uD83D\uDD28 Jail Log${caseRef}`,
-      `**User**: ${displayName(target)}\n` +
-      `**Hammer**: ${displayName(moderator)}\n` +
+      `**User**: <@${target.id}>\n` +
+      `**Hammer**: <@${moderator.id}>\n` +
       `**Reason**: ${reason}`,
     ),
   );
@@ -383,8 +383,8 @@ async function handleUnjail(
     buildEmbed(
       0x00c851,
       "\uD83D\uDD13 Unjail Log",
-      `**User**: ${displayName(target)}\n` +
-      `**Hammer**: ${displayName(moderator)}`,
+      `**User**: <@${target.id}>\n` +
+      `**Hammer**: <@${moderator.id}>`,
     ),
   );
 }
