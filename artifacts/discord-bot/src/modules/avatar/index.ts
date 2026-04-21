@@ -35,21 +35,13 @@ export function registerAvatarModule(client: Client) {
         return;
       }
 
-      const globalAvatar = user.displayAvatarURL({ extension: "png", size: 1024, forceStatic: false });
-      const serverAvatar = member?.displayAvatarURL({ extension: "png", size: 1024, forceStatic: false });
-      const display = serverAvatar ?? globalAvatar;
-
-      const links: string[] = [`[Global avatar](${globalAvatar})`];
-      if (serverAvatar && serverAvatar !== globalAvatar) links.push(`[Server avatar](${serverAvatar})`);
+      const display = member?.displayAvatarURL({ extension: "png", size: 1024, forceStatic: false })
+        ?? user.displayAvatarURL({ extension: "png", size: 1024, forceStatic: false });
 
       const embed = new EmbedBuilder()
         .setColor(0x5000ff)
-        .setAuthor({ name: member?.displayName ?? user.username, iconURL: globalAvatar })
-        .setTitle("Avatar Link")
-        .setDescription(`**Global & Server Avatar**\n${links.join(" • ")}`)
         .setImage(display)
-        .setFooter({ text: `Requested by ${message.author.username}`, iconURL: message.author.displayAvatarURL() })
-        .setTimestamp();
+        .setFooter({ text: `Requested by ${message.author.username}`, iconURL: message.author.displayAvatarURL() });
 
       await message.reply({
         embeds: [embed],
