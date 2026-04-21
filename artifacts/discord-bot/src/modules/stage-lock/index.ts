@@ -11,15 +11,12 @@ import { eq } from "drizzle-orm";
 import { isMainGuild } from "../../utils/guildFilter.js";
 
 const PREFIX = "=";
-const BRAND = 0x5000ff;
+const EVENT_COLOR = 0xff8000;
 
-function reply(message: Message, color: number, title: string, description: string) {
+function reply(message: Message, description: string) {
   const embed = new EmbedBuilder()
-    .setColor(color)
-    .setTitle(title)
-    .setDescription(description)
-    .setFooter({ text: "Night Stars • Stage Lock" })
-    .setTimestamp();
+    .setColor(EVENT_COLOR)
+    .setDescription(description);
   return message.reply({ embeds: [embed], allowedMentions: { repliedUser: false } }).catch(() => {});
 }
 
@@ -55,76 +52,69 @@ function getTargetChannel(member: GuildMember): VoiceBasedChannel | null {
 async function applyLock(message: Message, lock: boolean) {
   if (!message.guild || !message.member) return;
   if (!(await isAuthorized(message.member))) {
-    await reply(message, 0xff5555, "❌ Not Authorized", "You need Administrator or the Event Hoster role to use this.");
+    await reply(message, "You need Administrator or the Event Hoster role to use this.");
     return;
   }
 
   const channel = getTargetChannel(message.member);
   if (!channel) {
-    await reply(message, 0xff5555, "❌ No Voice Channel", "Join a voice or stage channel first, then run this command there.");
+    await reply(message, "Join a voice or stage channel first, then run this command there.");
     return;
   }
 
   const memberRoleId = await getMemberRoleId(message.guild.id);
   if (!memberRoleId) {
-    await reply(
-      message,
-      0xff5555,
-      "❌ Member Role Not Configured",
-      "Set the Member Role first via `/setup-jail` (member role field).",
-    );
+    await reply(message, "Set the Member Role first via the setup panel.");
     return;
   }
 
   const memberRole = message.guild.roles.cache.get(memberRoleId)
     ?? (await message.guild.roles.fetch(memberRoleId).catch(() => null));
   if (!memberRole) {
-    await reply(message, 0xff5555, "❌ Member Role Missing", "The configured member role no longer exists.");
+    await reply(message, "The configured member role no longer exists.");
     return;
   }
 
   const me = message.guild.members.me;
   if (!me?.permissionsIn(channel).has(PermissionsBitField.Flags.ManageChannels)) {
-    await reply(
-      message,
-      0xff5555,
-      "❌ Missing Permissions",
-      "I need **Manage Channels** permission on this channel to update overrides.",
-    );
+    await reply(message, "I need **Manage Channels** permission on this channel.");
     return;
   }
 
+  // Detect current state from existing overwrite
+  const existing = channel.permissionOverwrites.cache.get(memberRole.id);
+  const denied = existing?.deny.has(PermissionsBitField.Flags.Connect) ?? false;
+  const allowed = existing?.allow.has(PermissionsBitField.Flags.Connect) ?? false;
+  const isCurrentlyLocked = denied;
+  const isCurrentlyUnlocked = allowed || (!denied && !allowed);
+
   try {
     if (lock) {
-      // Lock: deny CONNECT for member role
+      if (isCurrentlyLocked) {
+        await reply(message, "Event stage already locked");
+        return;
+      }
       await channel.permissionOverwrites.edit(
         memberRole.id,
         { Connect: false },
         { reason: `Stage locked by ${message.author.tag}` },
       );
-      await reply(
-        message,
-        BRAND,
-        "🔒 Stage Locked",
-        `Members with <@&${memberRole.id}> can no longer **connect** to **${channel.name}**.`,
-      );
+      await reply(message, "Event stage locked !");
     } else {
-      // Unlock: allow CONNECT for member role
+      if (isCurrentlyUnlocked && !isCurrentlyLocked) {
+        await reply(message, "Event stage already unlocked");
+        return;
+      }
       await channel.permissionOverwrites.edit(
         memberRole.id,
         { Connect: true },
         { reason: `Stage unlocked by ${message.author.tag}` },
       );
-      await reply(
-        message,
-        BRAND,
-        "🔓 Stage Unlocked",
-        `Members with <@&${memberRole.id}> can now **connect** to **${channel.name}**.`,
-      );
+      await reply(message, "Event stage unlocked !");
     }
   } catch (err) {
     console.error("[StageLock] Failed to update permissions:", err);
-    await reply(message, 0xff5555, "❌ Failed", "Could not update channel permissions. Check role hierarchy.");
+    await reply(message, "Could not update channel permissions. Check role hierarchy.");
   }
 }
 
