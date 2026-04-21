@@ -302,7 +302,7 @@ async function handleJail(
     message,
     logsChannelId,
     buildEmbed(
-      0x5000ff,
+      0xff4d4d,
       `\uD83D\uDD28 Jail Log${caseRef}`,
       `**User**: <@${target.id}>\n` +
       `**Hammer**: <@${moderator.id}>\n` +
