@@ -109,15 +109,8 @@ export async function handleMasterSetupButton(interaction: ButtonInteraction): P
 
   if (id === "ms_close") {
     if (await denyIfNotAdmin(interaction)) return;
-    const closedEmbed = new EmbedBuilder()
-      .setColor(0xff4d4d)
-      .setTitle("\u2716\uFE0F Setup Closed")
-      .setDescription(`Closed by <@${interaction.user.id}>. Run \`=setup\` to open a new panel.`)
-      .setFooter({ text: "Night Stars \u2022 Admin only" });
-    await interaction.update({ embeds: [closedEmbed], components: buildClosedRows() }).catch(async (err) => {
-      console.error("[MasterSetup] close update failed:", err);
-      await interaction.message.edit({ embeds: [closedEmbed], components: buildClosedRows() }).catch(() => {});
-    });
+    await interaction.deferUpdate().catch(() => {});
+    await interaction.message.delete().catch((err) => console.log("[MasterSetup] close delete failed:", err?.message));
     return;
   }
 
