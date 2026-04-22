@@ -16,7 +16,6 @@ import { openAnnPanel } from "./ann.js";
 import { buildAllCommandsEmbed, getGuildPrefixes } from "./index.js";
 
 const BRAND_COLOR = 0x5000ff;
-const PANEL_TTL_MS = 5 * 60 * 1000;
 
 export function buildMasterSetupEmbed(): EmbedBuilder {
   return new EmbedBuilder()
@@ -68,8 +67,18 @@ export async function sendMasterSetupPanel(message: Message): Promise<void> {
     .catch((err) => { console.error("[MasterSetup] panel send failed:", err); return null; });
   if (sent) {
     console.log("[MasterSetup] panel posted, msgId=", sent.id);
-    setTimeout(() => sent.delete().catch(() => {}), PANEL_TTL_MS);
   }
+}
+
+function buildClosedRows(): ActionRowBuilder<ButtonBuilder>[] {
+  return buildMasterSetupRows().map((row) => {
+    const newRow = new ActionRowBuilder<ButtonBuilder>();
+    for (const c of row.components) {
+      const b = ButtonBuilder.from(c as ButtonBuilder).setDisabled(true);
+      newRow.addComponents(b);
+    }
+    return newRow;
+  });
 }
 
 async function denyIfNotAdmin(interaction: ButtonInteraction): Promise<boolean> {
@@ -99,7 +108,16 @@ export async function handleMasterSetupButton(interaction: ButtonInteraction): P
   if (!id.startsWith("ms_")) return;
 
   if (id === "ms_close") {
-    await interaction.message.delete().catch(() => {});
+    if (await denyIfNotAdmin(interaction)) return;
+    const closedEmbed = new EmbedBuilder()
+      .setColor(0xff4d4d)
+      .setTitle("\u2716\uFE0F Setup Closed")
+      .setDescription(`Closed by <@${interaction.user.id}>. Run \`=setup\` to open a new panel.`)
+      .setFooter({ text: "Night Stars \u2022 Admin only" });
+    await interaction.update({ embeds: [closedEmbed], components: buildClosedRows() }).catch(async (err) => {
+      console.error("[MasterSetup] close update failed:", err);
+      await interaction.message.edit({ embeds: [closedEmbed], components: buildClosedRows() }).catch(() => {});
+    });
     return;
   }
 
