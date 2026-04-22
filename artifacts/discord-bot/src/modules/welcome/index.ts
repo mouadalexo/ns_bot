@@ -123,7 +123,7 @@ export function applyVariables(template: string, member: GuildMember): string {
     .replace(/\{user_mention\}/gi, `<@${member.id}>`)
     .replace(/\{user\.tag\}/gi, member.user.tag)
     .replace(/\{user\.name\}/gi, member.user.username)
-    .replace(/\{user\}/gi, member.displayName || member.user.username)
+    .replace(/\{user\}/gi, `<@${member.id}>`)
     .replace(/\{server\}/gi, guild.name)
     .replace(/\{membercount\}/gi, String(guild.memberCount))
     .replace(/\{member_count\}/gi, String(guild.memberCount));
@@ -194,16 +194,21 @@ export async function composeWelcomeImage(member: GuildMember): Promise<Buffer> 
 // Payload builders & sending
 // ============================================================================
 
-async function buildServerPayload(member: GuildMember, cfg: WelcomeConfig) {
+async function buildServerPayloads(member: GuildMember, cfg: WelcomeConfig) {
   const v = cfg.server;
   const content = applyAll(v.message ?? "", member).trim() || `${applyAll("{user_mention}", member)} just joined!`;
 
   // Custom remote image overrides the composited template entirely.
   if (v.imageUrl) {
     return {
-      content,
-      files: [v.imageUrl],
-      allowedMentions: { users: [member.id] },
+      imagePayload: {
+        files: [v.imageUrl],
+        allowedMentions: { parse: [] as never[] },
+      },
+      textPayload: {
+        content,
+        allowedMentions: { users: [member.id] },
+      },
     };
   }
 
@@ -211,17 +216,37 @@ async function buildServerPayload(member: GuildMember, cfg: WelcomeConfig) {
     const buf = await composeWelcomeImage(member);
     const file = new AttachmentBuilder(buf, { name: "welcome.png" });
     return {
-      content,
-      files: [file],
-      allowedMentions: { users: [member.id] },
+      imagePayload: {
+        files: [file],
+        allowedMentions: { parse: [] as never[] },
+      },
+      textPayload: {
+        content,
+        allowedMentions: { users: [member.id] },
+      },
     };
   } catch (err) {
     console.error("[Welcome] image compose failed, sending text only:", err);
     return {
-      content,
-      allowedMentions: { users: [member.id] },
+      imagePayload: null,
+      textPayload: {
+        content,
+        allowedMentions: { users: [member.id] },
+      },
     };
   }
+}
+
+async function sendServerWelcome(
+  ch: TextChannel | NewsChannel,
+  member: GuildMember,
+  cfg: WelcomeConfig,
+) {
+  const { imagePayload, textPayload } = await buildServerPayloads(member, cfg);
+  if (imagePayload) {
+    await ch.send(imagePayload);
+  }
+  await ch.send(textPayload);
 }
 
 function buildDmPayload(member: GuildMember, cfg: WelcomeConfig) {
@@ -246,8 +271,7 @@ export async function sendWelcomePreview(
     if (!(ch instanceof TextChannel || ch instanceof NewsChannel)) {
       return { ok: false, reason: "Welcome channel not found" };
     }
-    const payload = await buildServerPayload(member, cfg);
-    await ch.send(payload);
+    await sendServerWelcome(ch, member, cfg);
     return { ok: true };
   }
   const payload = buildDmPayload(member, cfg);
@@ -285,8 +309,9 @@ export function registerWelcomeModule(client: Client) {
         if (ch instanceof TextChannel || ch instanceof NewsChannel) {
           const me = member.guild.members.me;
           if (me?.permissionsIn(ch).has("SendMessages")) {
-            const payload = await buildServerPayload(member, cfg);
-            await ch.send(payload).catch((err) => console.error("[Welcome] server send failed:", err?.message ?? err));
+            await sendServerWelcome(ch, member, cfg).catch((err) =>
+              console.error("[Welcome] server send failed:", err?.message ?? err),
+            );
           } else {
             console.warn(`[Welcome] Missing SendMessages in welcome channel ${ch.id}`);
           }
