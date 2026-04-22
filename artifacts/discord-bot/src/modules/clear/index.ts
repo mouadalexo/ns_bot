@@ -63,7 +63,7 @@ export function registerClearModule(client: Client) {
       const hasClearRole = allowedRoleIds.some((id) => actor.roles.cache.has(id));
       if (!isAdmin && !hasClearRole) {
         await message.delete().catch(() => {});
-        await sendTemp(channel, embed(0xff4d4d, "\u274C You don't have a clear role. Ask an admin to run `/setup-clear`."));
+        await sendTemp(channel, embed(0xff4d4d, "\u274C You don't have a clear role. Ask an admin to set it via `/general` (Page 2)."));
         return;
       }
 

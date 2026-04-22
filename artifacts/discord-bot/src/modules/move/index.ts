@@ -55,7 +55,7 @@ export function registerMoveModule(client: Client) {
       const isAdmin = actor.permissions.has(PermissionsBitField.Flags.Administrator);
       const hasMoveRole = allowedRoleIds.some((id) => actor.roles.cache.has(id));
       if (!isAdmin && !hasMoveRole) {
-        await sendTemp(message, embed(0xff4d4d, "\u274C You don't have a move role. Ask an admin to run `/setup-move`."));
+        await sendTemp(message, embed(0xff4d4d, "\u274C You don't have a move role. Ask an admin to set it via `/general` (Page 2)."));
         return;
       }
 

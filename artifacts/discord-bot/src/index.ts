@@ -68,34 +68,56 @@ async function ensureRuntimeSchema(): Promise<void> {
 }
 
 async function acquireBotInstanceLock(): Promise<boolean> {
-  lockClient = await pool.connect();
-  const result = await lockClient.query<{ acquired: boolean }>(
-    "select pg_try_advisory_lock($1) as acquired",
-    [BOT_INSTANCE_LOCK_KEY],
-  );
-  if (!result.rows[0]?.acquired) {
+  // Try once — if the lock is stuck (e.g., held by a pgbouncer-pooled idle
+  // backend from a previous run), forcibly terminate that backend and retry.
+  // PM2 already guarantees only one process runs at a time, so the lock is
+  // really just a safety net.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    lockClient = await pool.connect();
+    const result = await lockClient.query<{ acquired: boolean }>(
+      "select pg_try_advisory_lock($1) as acquired",
+      [BOT_INSTANCE_LOCK_KEY],
+    );
+    if (result.rows[0]?.acquired) {
+      lockKeepaliveTimer = setInterval(async () => {
+        if (!lockClient) {
+          clearInterval(lockKeepaliveTimer);
+          lockKeepaliveTimer = undefined;
+          return;
+        }
+        try {
+          await lockClient.query("SELECT 1");
+        } catch (err) {
+          console.error("[Bot] Lock keepalive failed — DB connection dropped:", err);
+          clearInterval(lockKeepaliveTimer);
+          lockKeepaliveTimer = undefined;
+          lockClient = undefined;
+          console.error("[Bot] Exiting so PM2 can restart with a fresh connection.");
+          process.exit(1);
+        }
+      }, 30_000);
+      return true;
+    }
     lockClient.release();
     lockClient = undefined;
-    return false;
+    if (attempt === 0) {
+      console.warn("[Bot] Lock held by stale connection — terminating holders and retrying.");
+      try {
+        await pool.query(
+          `select pg_terminate_backend(l.pid)
+             from pg_locks l
+            where l.locktype = 'advisory'
+              and l.objid = $1
+              and l.pid <> pg_backend_pid()`,
+          [BOT_INSTANCE_LOCK_KEY],
+        );
+        await new Promise((r) => setTimeout(r, 1500));
+      } catch (err) {
+        console.error("[Bot] Failed to terminate stale lock holders:", err);
+      }
+    }
   }
-  lockKeepaliveTimer = setInterval(async () => {
-    if (!lockClient) {
-      clearInterval(lockKeepaliveTimer);
-      lockKeepaliveTimer = undefined;
-      return;
-    }
-    try {
-      await lockClient.query("SELECT 1");
-    } catch (err) {
-      console.error("[Bot] Lock keepalive failed — DB connection dropped:", err);
-      clearInterval(lockKeepaliveTimer);
-      lockKeepaliveTimer = undefined;
-      lockClient = undefined;
-      console.error("[Bot] Exiting so PM2 can restart with a fresh connection.");
-      process.exit(1);
-    }
-  }, 30_000);
-  return true;
+  return false;
 }
 
 async function releaseBotInstanceLock(): Promise<void> {

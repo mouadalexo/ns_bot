@@ -57,6 +57,10 @@ import {
   handleGeneralHelpRolesSelect,
   handleGeneralEventHosterSelect,
   handleGeneralBlockedChSelect,
+  handleGeneralClearRolesSelect,
+  handleGeneralMoveRolesSelect,
+  handleGeneralPanelNext,
+  handleGeneralPanelBack,
   handleGeneralPanelSave,
   handleGeneralPanelReset,
   getHelpRoleIds,
@@ -438,7 +442,7 @@ export async function registerPanelCommands(client: Client) {
         "pp_save", "pp_reset",
         "cp_add_new", "cp_edit_game", "cp_remove_game", "cp_back_manage",
         "cp_open_details", "cp_save", "cp_reset",
-        "gp_save", "gp_reset",
+        "gp_save", "gp_reset", "gp_next", "gp_back",
         "pfx_edit",
         "ap_save", "ap_reset", "ap_event_color_open", "ap_color_event_title", "ap_color_event_desc", "ap_color_event_add", "ap_back",
         "rg_add", "rg_edit", "rg_preview", "rg_delete", "rg_save", "rg_cancel", "rg_back",
@@ -641,6 +645,10 @@ async function handleButtonInteraction(interaction: ButtonInteraction) {
       await handleGeneralPanelSave(interaction);
     } else if (customId === "gp_reset") {
       await handleGeneralPanelReset(interaction);
+    } else if (customId === "gp_next") {
+      await handleGeneralPanelNext(interaction);
+    } else if (customId === "gp_back") {
+      await handleGeneralPanelBack(interaction);
     } else if (customId === "pfx_edit") {
       await handlePrefixEditButton(interaction);
     } else if (customId === "ap_save") {
@@ -678,6 +686,10 @@ async function handleRoleSelectInteraction(interaction: RoleSelectMenuInteractio
       await handleGeneralHelpRolesSelect(interaction);
     } else if (customId === "gp_event_hoster") {
       await handleGeneralEventHosterSelect(interaction);
+    } else if (customId === "gp_clear_roles") {
+      await handleGeneralClearRolesSelect(interaction);
+    } else if (customId === "gp_move_roles") {
+      await handleGeneralMoveRolesSelect(interaction);
     } else if (customId.startsWith("ct_")) {
       await handleCtpTagRoleSelect(interaction);
     } else if (customId === "ap_ann_role") {
