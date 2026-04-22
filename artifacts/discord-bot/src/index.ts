@@ -23,7 +23,7 @@ import { registerWelcomeModule } from "./modules/welcome/index.js";
 import { registerMasterSetupModule } from "./modules/master-setup/index.js";
 import { registerPanelCommands } from "./panels/index.js";
 
-const BOT_INSTANCE_LOCK_KEY = 489215731;
+const BOT_INSTANCE_LOCK_KEY = 781034562;
 let lockClient: Awaited<ReturnType<typeof pool.connect>> | undefined;
 let lockKeepaliveTimer: NodeJS.Timeout | undefined;
 
