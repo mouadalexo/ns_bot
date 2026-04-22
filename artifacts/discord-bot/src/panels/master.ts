@@ -13,6 +13,7 @@ import { openCtpTagPanel } from "./ctpTemp.js";
 import { openGeneralSetupPanel } from "./general.js";
 import { openWelcomePanel } from "./welcome.js";
 import { openAnnPanel } from "./ann.js";
+import { buildAllCommandsEmbed, getGuildPrefixes } from "./index.js";
 
 const BRAND_COLOR = 0x5000ff;
 const PANEL_TTL_MS = 5 * 60 * 1000;
@@ -20,80 +21,9 @@ const PANEL_TTL_MS = 5 * 60 * 1000;
 export function buildMasterSetupEmbed(): EmbedBuilder {
   return new EmbedBuilder()
     .setColor(BRAND_COLOR)
-    .setTitle("\u2699\uFE0F Night Stars Bot \u2014 Setup Center")
-    .setDescription(
-      [
-        "Welcome to the Night Stars Bot setup hub. Pick any system below to configure it.",
-        "Only members with **Administrator** can use these buttons.",
-      ].join("\n"),
-    )
-    .addFields(
-      {
-        name: "\uD83C\uDFA7 PVS \u2014 Private Voice System",
-        value: "Premium private voice rooms with keys, pulls, renaming, and a managed lobby.",
-        inline: false,
-      },
-      {
-        name: "\uD83C\uDFAE CTP \u2014 Call to Play",
-        value:
-          "Two systems: **Category** (one role per game category) and **Onetap** (temp voice channels with game tags).",
-        inline: false,
-      },
-      {
-        name: "\uD83D\uDCE3 Announcements",
-        value: "`!ann`, `!event`, and `=an` quick announcements with role tagging and embed colors.",
-        inline: false,
-      },
-      {
-        name: "\uD83D\uDC4B Welcome",
-        value: "Server-channel welcome and DM welcome with full message customization and variables.",
-        inline: false,
-      },
-      {
-        name: "\uD83C\uDFAD Role Giver",
-        value: "Custom commands that grant a role only to members with selected giver roles.",
-        inline: false,
-      },
-      {
-        name: "\uD83D\uDD27 General",
-        value: "Set the staff role, help-allowed roles, event hoster role, and blocked channels.",
-        inline: false,
-      },
-      {
-        name: "\uD83D\uDD12 Jail \u2014 Slash command",
-        value:
-          "Configure with `/setup-jail`. Hammer roles use `=jail @user reason`, `=unjail @user`, `=case @user`.",
-        inline: false,
-      },
-      {
-        name: "\uD83D\uDD04 Move \u2014 `aji @user`",
-        value:
-          "Admins can use it without setup. Add extra allowed roles with `/setup-move role-1 \u2026 role-5`.",
-        inline: false,
-      },
-      {
-        name: "\uD83E\uDDF9 Clear \u2014 `mse7 N`",
-        value:
-          "Admins can use it without setup. Add extra allowed roles with `/setup-clear role-1 \u2026 role-5`. Max **99** messages, no older than 14 days.",
-        inline: false,
-      },
-      {
-        name: "\uD83D\uDEAB Auto-Delete \u2014 Slash command",
-        value: "Block words server-wide and add per-channel/category content rules with `/auto-delete`.",
-        inline: false,
-      },
-      {
-        name: "\uD83C\uDFA4 Stage Lock",
-        value: "`=stagelock` and `=stageunlock` from inside a voice/stage channel (admin or event hoster).",
-        inline: false,
-      },
-      {
-        name: "\uD83D\uDD24 Prefixes",
-        value: "View or change command prefixes per system with `/prefix`.",
-        inline: false,
-      },
-    )
-    .setFooter({ text: "Night Stars \u2022 Setup Center" });
+    .setTitle("\u2699\uFE0F Night Stars Bot \u2014 Setup Panel")
+    .setDescription("Pick a system below to configure it.")
+    .setFooter({ text: "Night Stars \u2022 Admin only" });
 }
 
 export function buildMasterSetupRows(): ActionRowBuilder<ButtonBuilder>[] {
@@ -115,6 +45,7 @@ export function buildMasterSetupRows(): ActionRowBuilder<ButtonBuilder>[] {
     new ButtonBuilder().setCustomId("ms_autodelete").setStyle(ButtonStyle.Secondary).setLabel("Auto-Delete").setEmoji("\uD83D\uDEAB"),
     new ButtonBuilder().setCustomId("ms_stagelock").setStyle(ButtonStyle.Secondary).setLabel("Stage Lock").setEmoji("\uD83C\uDFA4"),
     new ButtonBuilder().setCustomId("ms_prefix").setStyle(ButtonStyle.Secondary).setLabel("Prefixes").setEmoji("\uD83D\uDD24"),
+    new ButtonBuilder().setCustomId("ms_help").setStyle(ButtonStyle.Success).setLabel("Help").setEmoji("\u2753"),
     new ButtonBuilder().setCustomId("ms_close").setStyle(ButtonStyle.Danger).setLabel("Close").setEmoji("\u2716\uFE0F"),
   );
   return [row1, row2, row3];
@@ -173,6 +104,12 @@ export async function handleMasterSetupButton(interaction: ButtonInteraction): P
   }
 
   if (await denyIfNotAdmin(interaction)) return;
+
+  if (id === "ms_help") {
+    const { pvs, mgr, ctp, ann } = await getGuildPrefixes(interaction.guildId!);
+    await interaction.reply({ embeds: [buildAllCommandsEmbed(pvs, mgr, ctp, ann)], ephemeral: true });
+    return;
+  }
 
   switch (id) {
     case "ms_pvs":

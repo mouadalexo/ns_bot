@@ -85,7 +85,7 @@ import {
 } from "./welcome.js";
 import { handleMasterSetupButton } from "./master.js";
 
-function buildAllCommandsEmbed(pvs = "=", mgr = "+", ctp = "-", ann = "!") {
+export function buildAllCommandsEmbed(pvs = "=", mgr = "+", ctp = "-", ann = "!") {
   return new EmbedBuilder()
     .setColor(0x5000ff)
     .setTitle("\uD83D\uDCCB Night Stars Bot \u2014 All Commands")
@@ -711,7 +711,7 @@ async function handleChannelSelectInteraction(interaction: ChannelSelectMenuInte
   }
 }
 
-async function getGuildPrefixes(guildId: string) {
+export async function getGuildPrefixes(guildId: string) {
   const rows = await db.select().from(botConfigTable).where(eq(botConfigTable.guildId, guildId)).limit(1);
   const row = rows[0];
   return {
