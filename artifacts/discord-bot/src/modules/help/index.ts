@@ -7,21 +7,24 @@ import {
   EmbedBuilder,
   Message,
   PermissionsBitField,
+  StringSelectMenuBuilder,
+  StringSelectMenuInteraction,
 } from "discord.js";
 import { db, botConfigTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
 const COLOR = 0x5000ff;
 const FOOTER = "Night Stars \u2022 NS Bot";
+const PAGE_SIZE = 6;
 
+type Command = { syntax: string; desc: string };
+type Prefixes = { pvs: string; mgr: string; ctp: string; ann: string };
 type CategoryDef = {
   key: string;
   label: string;
   emoji: string;
-  buildLines: (p: Prefixes) => string[];
+  buildCommands: (p: Prefixes) => Command[];
 };
-
-type Prefixes = { pvs: string; mgr: string; ctp: string; ann: string };
 
 async function getPrefixes(guildId: string): Promise<Prefixes> {
   const rows = await db.select().from(botConfigTable).where(eq(botConfigTable.guildId, guildId)).limit(1);
@@ -39,42 +42,42 @@ async function getPrefixes(guildId: string): Promise<Prefixes> {
 const MEMBER_CATEGORIES: CategoryDef[] = [
   {
     key: "pvs",
-    label: "Private Voice",
+    label: "Private Voice Commands",
     emoji: "\uD83C\uDFA7",
-    buildLines: (p) => [
-      `\`${p.pvs}key @user\` \u2014 Give or remove access to your room`,
-      `\`${p.pvs}pull @user\` \u2014 Pull a member from the waiting room`,
-      `\`${p.pvs}see keys\` \u2014 List members with access`,
-      `\`${p.pvs}clear keys\` \u2014 Remove all keys`,
-      `\`${p.pvs}name <name>\` \u2014 Rename your voice room`,
-      `\`${p.pvs}tlock\` / \`${p.pvs}tunlock\` \u2014 Lock or unlock the text chat`,
-      `\`${p.pvs}kick @user\` \u2014 Disconnect someone from your room`,
+    buildCommands: (p) => [
+      { syntax: `${p.pvs}key @user`, desc: "Give or remove a member's access to your room" },
+      { syntax: `${p.pvs}pull @user`, desc: "Pull a member from the waiting room into your room" },
+      { syntax: `${p.pvs}see keys`, desc: "List all members who have access to your room" },
+      { syntax: `${p.pvs}clear keys`, desc: "Remove every key — your room becomes fully private" },
+      { syntax: `${p.pvs}name <name>`, desc: "Rename your private voice room" },
+      { syntax: `${p.pvs}tlock`, desc: "Lock the room's text chat for non-keyholders" },
+      { syntax: `${p.pvs}tunlock`, desc: "Unlock the room's text chat" },
+      { syntax: `${p.pvs}kick @user`, desc: "Disconnect someone from your voice room" },
     ],
   },
   {
     key: "ctp",
-    label: "Call to Play",
+    label: "Call to Play Commands",
     emoji: "\uD83C\uDFAE",
-    buildLines: () => [
-      "`tag` \u2014 Ping the game role for your current voice category",
-      "`tag <gamename>` \u2014 One-tap ping in a temp voice category (e.g. `tag valorant`)",
-      "`tagcd` \u2014 Show remaining tag cooldown for your category",
-      "",
-      "_These commands work without a prefix._",
+    buildCommands: () => [
+      { syntax: "tag", desc: "Ping the game role for your current voice category" },
+      { syntax: "tag <gamename>", desc: "One-tap ping in a temp voice category (e.g. tag valorant)" },
+      { syntax: "tagcd", desc: "Show the remaining tag cooldown for your category" },
     ],
   },
   {
     key: "social",
-    label: "Social",
+    label: "Social Commands",
     emoji: "\uD83D\uDC95",
-    buildLines: (p) => [
-      `\`${p.pvs}relationship\` \u2014 Show your relationship status`,
-      `\`${p.pvs}propose @user\` \u2014 Send a proposal (10-min window)`,
-      `\`${p.pvs}accept\` / \`${p.pvs}reject\` \u2014 Respond to your latest pending request`,
-      `\`${p.pvs}partner\` \u2014 Show your current partner`,
-      `\`${p.pvs}breakup\` \u2014 End your relationship`,
-      `\`${p.pvs}children\` \u2014 List your children (max 3)`,
-      `\`${p.pvs}addchild @user\` \u2014 Send an adoption request`,
+    buildCommands: (p) => [
+      { syntax: `${p.pvs}relationship`, desc: "Show your relationship status" },
+      { syntax: `${p.pvs}propose @user`, desc: "Send a proposal (10-minute window)" },
+      { syntax: `${p.pvs}accept`, desc: "Accept your most recent pending request" },
+      { syntax: `${p.pvs}reject`, desc: "Reject your most recent pending request" },
+      { syntax: `${p.pvs}partner`, desc: "Show your current partner" },
+      { syntax: `${p.pvs}breakup`, desc: "End your current relationship" },
+      { syntax: `${p.pvs}children`, desc: "List your children (max 3)" },
+      { syntax: `${p.pvs}addchild @user`, desc: "Send an adoption request" },
     ],
   },
 ];
@@ -84,148 +87,148 @@ const MEMBER_CATEGORIES: CategoryDef[] = [
 const STAFF_CATEGORIES: CategoryDef[] = [
   {
     key: "setup",
-    label: "Setup",
+    label: "Setup Commands",
     emoji: "\u2699\uFE0F",
-    buildLines: () => [
-      "`/setup pvs` \u2014 Configure the Private Voice System",
-      "`/setup ctp-category` \u2014 Configure CTP category games",
-      "`/setup ctp-onetap` \u2014 Configure CTP one-tap (temp voice)",
-      "`/setup-jail` \u2014 Configure the Jail system",
-      "`/ann setup` \u2014 Configure Announcements",
-      "`/welcome setup` \u2014 Configure the Welcome system",
-      "`/setup-move` \u2014 Roles allowed to use `aji @user`",
-      "`/setup-clear` \u2014 Roles allowed to use `mse7 N`",
-      "`/general setup` \u2014 Staff role, blocked channels, hosters",
-      "`/role-giver setup` \u2014 Open the Role Giver panel",
-      "`/prefix` \u2014 View and change the bot prefix",
+    buildCommands: () => [
+      { syntax: "/setup pvs", desc: "Configure the Private Voice System" },
+      { syntax: "/setup ctp-category", desc: "Configure CTP category games" },
+      { syntax: "/setup ctp-onetap", desc: "Configure CTP one-tap (temp voice)" },
+      { syntax: "/setup-jail", desc: "Configure the Jail system" },
+      { syntax: "/ann setup", desc: "Configure Announcements" },
+      { syntax: "/welcome setup", desc: "Configure the Welcome system" },
+      { syntax: "/setup-move", desc: "Set roles allowed to use aji @user" },
+      { syntax: "/setup-clear", desc: "Set roles allowed to use mse7 N" },
+      { syntax: "/general setup", desc: "Staff role, blocked channels, event hosters" },
+      { syntax: "/role-giver setup", desc: "Open the Role Giver setup panel" },
+      { syntax: "/prefix", desc: "View and change the bot prefix" },
     ],
   },
   {
     key: "jail",
-    label: "Jail",
+    label: "Jail Commands",
     emoji: "\uD83D\uDD28",
-    buildLines: (p) => [
-      `\`${p.pvs}jail @user <reason>\` \u2014 Apply the jail role`,
-      `\`${p.pvs}unjail @user\` \u2014 Remove jail and restore Member`,
-      `\`${p.pvs}case @user\` \u2014 Show the active jail reason`,
+    buildCommands: (p) => [
+      { syntax: `${p.pvs}jail @user <reason>`, desc: "Apply the jail role to a member" },
+      { syntax: `${p.pvs}unjail @user`, desc: "Remove jail and restore the Member role" },
+      { syntax: `${p.pvs}case @user`, desc: "Show the active jail reason for a member" },
     ],
   },
   {
     key: "stagelock",
-    label: "Stage Lock",
+    label: "Stage Lock Commands",
     emoji: "\uD83C\uDFA4",
-    buildLines: (p) => [
-      `\`${p.pvs}stagelock\` \u2014 Block the Member role from connecting to your channel`,
-      `\`${p.pvs}stageunlock\` \u2014 Re-allow the Member role to connect`,
+    buildCommands: (p) => [
+      { syntax: `${p.pvs}stagelock`, desc: "Block the Member role from connecting to your channel" },
+      { syntax: `${p.pvs}stageunlock`, desc: "Re-allow the Member role to connect" },
     ],
   },
   {
     key: "manager",
-    label: "PVS Manager",
+    label: "PVS Manager Commands",
     emoji: "\uD83D\uDD11",
-    buildLines: (p) => [
-      `\`${p.mgr}pv @user\` \u2014 Create a permanent private voice room`,
-      `\`${p.mgr}pv delete @user\` \u2014 Remove a member's PVS room`,
+    buildCommands: (p) => [
+      { syntax: `${p.mgr}pv @user`, desc: "Create a permanent private voice room for a member" },
+      { syntax: `${p.mgr}pv delete @user`, desc: "Remove a member's PVS room" },
     ],
   },
   {
     key: "ann",
-    label: "Announcements",
+    label: "Announcement Commands",
     emoji: "\uD83D\uDCE2",
-    buildLines: (p) => [
-      `\`${p.ann}<message>\` \u2014 Send a styled announcement to the configured channel`,
-      "Configure tag role, embed colors and logs via `/ann setup`.",
+    buildCommands: (p) => [
+      { syntax: `${p.ann}<message>`, desc: "Send a styled announcement to the configured channel" },
     ],
   },
   {
     key: "modtools",
     label: "Mod Tools",
     emoji: "\uD83D\uDEE0\uFE0F",
-    buildLines: () => [
-      "`aji @user` \u2014 Move a member into your current voice channel",
-      "`mse7 N` \u2014 Clear the last N messages in this channel",
+    buildCommands: () => [
+      { syntax: "aji @user", desc: "Move a member into your current voice channel" },
+      { syntax: "mse7 N", desc: "Clear the last N messages in this channel" },
     ],
   },
   {
     key: "rolegiver",
-    label: "Role Giver",
+    label: "Role Giver Commands",
     emoji: "\uD83C\uDFAD",
-    buildLines: (p) => [
-      `Custom commands defined via \`/role-giver setup\`.`,
-      `Format: \`${p.pvs}<commandName> @user\` toggles the configured role.`,
-      `Example: if a rule is named \`mute\`, use \`${p.pvs}mute @user\`.`,
+    buildCommands: (p) => [
+      { syntax: `${p.pvs}<rule-name> @user`, desc: "Toggle the role bound to that rule (configured via /role-giver setup)" },
     ],
   },
 ];
 
 // ── EMBED + COMPONENT BUILDERS ──────────────────────────────────────────────
 
-function commandCount(cat: CategoryDef, p: Prefixes): number {
-  return cat.buildLines(p).filter((l) => l.includes("`")).length;
-}
-
-function buildMainEmbed(scope: "m" | "s", cats: CategoryDef[], p: Prefixes): EmbedBuilder {
-  const title = scope === "m" ? "\uD83D\uDCDC Member Commands" : "\u2699\uFE0F Staff & Setup Commands";
-  const desc = cats
-    .map((c) => `${c.emoji} **${c.label}** \u2014 _View ${commandCount(c, p)} command(s)_`)
-    .join("\n");
+function buildMainEmbed(scope: "m" | "s"): EmbedBuilder {
+  const sub = scope === "m" ? "Member Commands" : "Staff & Setup Commands";
   return new EmbedBuilder()
     .setColor(COLOR)
     .setTitle("Select A Command Category!")
-    .setAuthor({ name: title })
-    .setDescription(desc)
+    .setDescription(`Choose which category of help you want to check below.\n\n_${sub}_`)
     .setFooter({ text: FOOTER });
 }
 
-function buildCategoryEmbed(cat: CategoryDef, p: Prefixes): EmbedBuilder {
-  return new EmbedBuilder()
-    .setColor(COLOR)
-    .setTitle(`${cat.emoji} ${cat.label} \u2014 Commands`)
-    .setDescription(cat.buildLines(p).join("\n"))
-    .setFooter({ text: FOOTER });
-}
-
-function buildMainComponents(scope: "m" | "s", cats: CategoryDef[], closeId: string): ActionRowBuilder<ButtonBuilder>[] {
-  const rows: ActionRowBuilder<ButtonBuilder>[] = [];
-  let row = new ActionRowBuilder<ButtonBuilder>();
-  let inRow = 0;
+function buildSelectRow(scope: "m" | "s", cats: CategoryDef[], p: Prefixes): ActionRowBuilder<StringSelectMenuBuilder> {
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId(`help_${scope}_select`)
+    .setPlaceholder("Select A Command Category!");
   for (const c of cats) {
-    if (inRow === 5) {
-      rows.push(row);
-      row = new ActionRowBuilder<ButtonBuilder>();
-      inRow = 0;
-    }
-    row.addComponents(
-      new ButtonBuilder()
-        .setCustomId(`help_${scope}_cat_${c.key}`)
-        .setLabel(c.label)
-        .setEmoji(c.emoji)
-        .setStyle(ButtonStyle.Secondary),
-    );
-    inRow++;
+    const count = c.buildCommands(p).length;
+    menu.addOptions({
+      label: c.label,
+      value: c.key,
+      description: `View ${count} command${count === 1 ? "" : "s"}`,
+      emoji: c.emoji,
+    });
   }
-  if (inRow > 0) rows.push(row);
-
-  // Close row
-  rows.push(
-    new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder().setCustomId(closeId).setLabel("Close").setEmoji("\u2716\uFE0F").setStyle(ButtonStyle.Danger),
-    ),
-  );
-  return rows;
+  return new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(menu);
 }
 
-function buildCategoryComponents(scope: "m" | "s", closeId: string): ActionRowBuilder<ButtonBuilder>[] {
+function buildMainComponents(scope: "m" | "s", cats: CategoryDef[], p: Prefixes, closeId: string) {
   return [
+    buildSelectRow(scope, cats, p),
     new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`help_${scope}_back`)
-        .setLabel("Select A Command Category!")
-        .setEmoji("\u2B05\uFE0F")
-        .setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId(closeId).setLabel("Close").setEmoji("\u2716\uFE0F").setStyle(ButtonStyle.Danger),
     ),
   ];
+}
+
+function buildCategoryEmbed(cat: CategoryDef, p: Prefixes, page: number): { embed: EmbedBuilder; totalPages: number } {
+  const cmds = cat.buildCommands(p);
+  const totalPages = Math.max(1, Math.ceil(cmds.length / PAGE_SIZE));
+  const safePage = Math.min(Math.max(1, page), totalPages);
+  const slice = cmds.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const desc = slice.map((c) => `\`${c.syntax}\`\n\u2502 ${c.desc}`).join("\n\n");
+  const embed = new EmbedBuilder()
+    .setColor(COLOR)
+    .setTitle(`${cat.emoji} ${cat.label}`)
+    .setDescription(desc || "_No commands._")
+    .setFooter({ text: `Page ${safePage}/${totalPages} \u2022 ${FOOTER}` });
+  return { embed, totalPages };
+}
+
+function buildCategoryComponents(scope: "m" | "s", catKey: string, page: number, totalPages: number, closeId: string) {
+  const navRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`help_${scope}_pg_${catKey}_${page - 1}`)
+      .setEmoji("\u2B05\uFE0F")
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(page <= 1),
+    new ButtonBuilder()
+      .setCustomId(`help_${scope}_pg_${catKey}_${page + 1}`)
+      .setEmoji("\u27A1\uFE0F")
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(page >= totalPages),
+  );
+  const ctrlRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`help_${scope}_back`)
+      .setLabel("Select A Command Category!")
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId(closeId).setLabel("Close").setEmoji("\u2716\uFE0F").setStyle(ButtonStyle.Danger),
+  );
+  return [navRow, ctrlRow];
 }
 
 // ── ENTRY POINTS ────────────────────────────────────────────────────────────
@@ -233,39 +236,68 @@ function buildCategoryComponents(scope: "m" | "s", closeId: string): ActionRowBu
 export async function sendMemberHelp(message: Message): Promise<void> {
   if (!message.guild) return;
   const p = await getPrefixes(message.guild.id);
-  // Encode original message ID + author ID in close-id so we can delete both
   const closeId = `help_m_close_${message.id}_${message.author.id}`;
-  const embed = buildMainEmbed("m", MEMBER_CATEGORIES, p);
-  const components = buildMainComponents("m", MEMBER_CATEGORIES, closeId);
-  await message.channel.send({ embeds: [embed], components }).catch(() => {});
+  await message.channel
+    .send({ embeds: [buildMainEmbed("m")], components: buildMainComponents("m", MEMBER_CATEGORIES, p, closeId) })
+    .catch(() => {});
 }
 
 export async function sendStaffHelp(interaction: ChatInputCommandInteraction): Promise<void> {
   if (!interaction.guildId) return;
   const p = await getPrefixes(interaction.guildId);
   const closeId = `help_s_close_${interaction.user.id}`;
-  const embed = buildMainEmbed("s", STAFF_CATEGORIES, p);
-  const components = buildMainComponents("s", STAFF_CATEGORIES, closeId);
-  await interaction.reply({ embeds: [embed], components, ephemeral: true });
+  await interaction.reply({
+    embeds: [buildMainEmbed("s")],
+    components: buildMainComponents("s", STAFF_CATEGORIES, p, closeId),
+    ephemeral: true,
+  });
 }
 
-// ── INTERACTION ROUTER ──────────────────────────────────────────────────────
+// ── INTERACTION ROUTERS ─────────────────────────────────────────────────────
+
+function deriveCloseId(scope: "m" | "s", interaction: ButtonInteraction | StringSelectMenuInteraction): string {
+  // Pull existing close id from the message components if present, else build a fresh one
+  const rows = interaction.message?.components ?? [];
+  for (const row of rows) {
+    for (const comp of (row as any).components ?? []) {
+      const cid: string = comp.customId ?? comp.custom_id ?? "";
+      if (cid.startsWith(`help_${scope}_close_`)) return cid;
+    }
+  }
+  return scope === "m"
+    ? `help_m_close_${interaction.message.id}_${interaction.user.id}`
+    : `help_s_close_${interaction.user.id}`;
+}
+
+export async function handleHelpSelect(interaction: StringSelectMenuInteraction): Promise<void> {
+  const id = interaction.customId;
+  if (!id.startsWith("help_") || !id.endsWith("_select")) return;
+  const scope: "m" | "s" = id.startsWith("help_m_") ? "m" : "s";
+  const cats = scope === "m" ? MEMBER_CATEGORIES : STAFF_CATEGORIES;
+  const key = interaction.values[0];
+  const cat = cats.find((c) => c.key === key);
+  if (!cat) return;
+  const p = await getPrefixes(interaction.guildId!);
+  const { embed, totalPages } = buildCategoryEmbed(cat, p, 1);
+  const closeId = deriveCloseId(scope, interaction);
+  await interaction.update({
+    embeds: [embed],
+    components: buildCategoryComponents(scope, cat.key, 1, totalPages, closeId),
+  });
+}
 
 export async function handleHelpButton(interaction: ButtonInteraction): Promise<void> {
   const id = interaction.customId;
   if (!id.startsWith("help_")) return;
-
   const scope: "m" | "s" = id.startsWith("help_m_") ? "m" : "s";
   const cats = scope === "m" ? MEMBER_CATEGORIES : STAFF_CATEGORIES;
 
   // Close
   if (id.startsWith(`help_${scope}_close_`)) {
     const parts = id.split("_");
-    // help / m|s / close / origMsgId? / origAuthorId
     if (scope === "m") {
       const origMsgId = parts[3];
       const origAuthorId = parts[4];
-      // Permission: only the original author or anyone with Manage Messages
       const memberPerms = interaction.memberPermissions;
       const allowed =
         interaction.user.id === origAuthorId ||
@@ -283,7 +315,6 @@ export async function handleHelpButton(interaction: ButtonInteraction): Promise<
       }
       return;
     }
-    // staff (ephemeral) — only requester can close
     const origAuthorId = parts[3];
     if (interaction.user.id !== origAuthorId) {
       await interaction.reply({
@@ -301,34 +332,31 @@ export async function handleHelpButton(interaction: ButtonInteraction): Promise<
 
   const p = await getPrefixes(interaction.guildId!);
 
-  // Back
+  // Back to main
   if (id === `help_${scope}_back`) {
-    // Re-derive close-id from message components (the close button is still on the panel originally — but we replaced components, so reconstruct)
-    // For simplicity, rebuild a fresh close id (member: use panel msg id + interaction user; staff: user id)
-    const closeId =
-      scope === "m"
-        ? `help_m_close_${interaction.message.id}_${interaction.user.id}`
-        : `help_s_close_${interaction.user.id}`;
+    const closeId = deriveCloseId(scope, interaction);
     await interaction.update({
-      embeds: [buildMainEmbed(scope, cats, p)],
-      components: buildMainComponents(scope, cats, closeId),
+      embeds: [buildMainEmbed(scope)],
+      components: buildMainComponents(scope, cats, p, closeId),
     });
     return;
   }
 
-  // Category
-  const catPrefix = `help_${scope}_cat_`;
-  if (id.startsWith(catPrefix)) {
-    const key = id.slice(catPrefix.length);
-    const cat = cats.find((c) => c.key === key);
-    if (!cat) return;
-    const closeId =
-      scope === "m"
-        ? `help_m_close_${interaction.message.id}_${interaction.user.id}`
-        : `help_s_close_${interaction.user.id}`;
+  // Pagination: help_<scope>_pg_<catKey>_<pageNum>
+  const pgPrefix = `help_${scope}_pg_`;
+  if (id.startsWith(pgPrefix)) {
+    const rest = id.slice(pgPrefix.length);
+    const lastUnderscore = rest.lastIndexOf("_");
+    if (lastUnderscore < 0) return;
+    const catKey = rest.slice(0, lastUnderscore);
+    const page = parseInt(rest.slice(lastUnderscore + 1), 10);
+    const cat = cats.find((c) => c.key === catKey);
+    if (!cat || isNaN(page)) return;
+    const { embed, totalPages } = buildCategoryEmbed(cat, p, page);
+    const closeId = deriveCloseId(scope, interaction);
     await interaction.update({
-      embeds: [buildCategoryEmbed(cat, p)],
-      components: buildCategoryComponents(scope, closeId),
+      embeds: [embed],
+      components: buildCategoryComponents(scope, catKey, Math.min(Math.max(1, page), totalPages), totalPages, closeId),
     });
     return;
   }

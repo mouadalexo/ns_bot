@@ -88,7 +88,7 @@ import {
   handleSetupClearCommand,
 } from "./welcome.js";
 import { handleMasterSetupButton } from "./master.js";
-import { sendStaffHelp, handleHelpButton } from "../modules/help/index.js";
+import { sendStaffHelp, handleHelpButton, handleHelpSelect } from "../modules/help/index.js";
 
 export function buildAllCommandsEmbed(pvs = "=", mgr = "+", ctp = "-", ann = "!") {
   return new EmbedBuilder()
@@ -466,6 +466,10 @@ export async function registerPanelCommands(client: Client) {
     }
 
     if (interaction.isStringSelectMenu()) {
+      if (interaction.customId.startsWith("help_") && interaction.customId.endsWith("_select")) {
+        try { await handleHelpSelect(interaction as StringSelectMenuInteraction); } catch (err) { console.error("Help select error:", err); }
+        return;
+      }
       if (interaction.customId === "cp_game_select") {
         try { await handleCtpGameSelect(interaction as StringSelectMenuInteraction); } catch (err) { console.error("CTP game select error:", err); }
       } else if (interaction.customId.startsWith("ct_")) {
