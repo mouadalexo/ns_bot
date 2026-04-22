@@ -1,7 +1,6 @@
 import { Client, Message, EmbedBuilder, TextChannel } from "discord.js";
 import { db } from "@workspace/db";
 import {
-  botConfigTable,
   ctpCategoriesTable,
   ctpCooldownsTable,
   ctpTempVoiceConfigTable,
@@ -10,15 +9,6 @@ import {
 } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { isMainGuild } from "../../utils/guildFilter.js";
-
-async function getGuildPrefix(guildId: string): Promise<string> {
-  const [cfg] = await db
-    .select({ pvsPrefix: botConfigTable.pvsPrefix })
-    .from(botConfigTable)
-    .where(eq(botConfigTable.guildId, guildId))
-    .limit(1);
-  return cfg?.pvsPrefix ?? "=";
-}
 
 function formatSeconds(total: number): string {
   const m = Math.floor(total / 60);
@@ -35,10 +25,12 @@ export function registerCTPModule(client: Client) {
       if (!message.guild) return;
       if (!isMainGuild(message.guild.id)) return;
 
-      const prefix = await getGuildPrefix(message.guild.id);
       const content = message.content.toLowerCase().trim();
-      const isCTPTag = content === prefix + "tag";
-      const isTempTag = content.startsWith(prefix) && !isCTPTag && content.length > prefix.length;
+      // CTP category: exactly "tag" (no prefix, nothing else with it)
+      const isCTPTag = content === "tag";
+      // One Tap (temp voice): "tag <gamename>" — must be exactly two tokens, no extras
+      const tapMatch = !isCTPTag ? content.match(/^tag\s+(\S+)\s*$/) : null;
+      const isTempTag = !!tapMatch;
 
       if (!isCTPTag && !isTempTag) return;
 
@@ -80,6 +72,7 @@ export function registerCTPModule(client: Client) {
           setTimeout(() => notice.delete().catch(() => {}), 6000);
           return;
         }
+        message.delete().catch(() => {});
 
         const now = new Date();
         const cooldownRecord = await db
@@ -131,9 +124,9 @@ export function registerCTPModule(client: Client) {
         return;
       }
 
-      // ── -gamename in temp voice category ──────────────────────────────────
-      if (isTempTag) {
-        const gameInput = content.slice(prefix.length).trim();
+      // ── tag <gamename> in temp voice category ─────────────────────────────
+      if (isTempTag && tapMatch) {
+        const gameInput = tapMatch[1].trim();
         if (!gameInput) return;
 
         const voiceChannel = member.voice.channel;
@@ -162,7 +155,7 @@ export function registerCTPModule(client: Client) {
               embeds: [
                 new EmbedBuilder()
                   .setColor(0x5000ff)
-                  .setDescription(`**${ctpMatch.gameName}** has its own voice category! Join the game voice and use \`${prefix}tag\` there.`),
+                  .setDescription(`**${ctpMatch.gameName}** has its own voice category! Join the game voice and type \`tag\` there.`),
               ],
             });
             setTimeout(() => notice.delete().catch(() => {}), 8000);

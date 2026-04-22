@@ -735,44 +735,29 @@ export async function getGuildPrefixes(guildId: string) {
 }
 
 async function openPrefixPanel(interaction: ChatInputCommandInteraction) {
-  const { pvs, mgr, ctp, ann } = await getGuildPrefixes(interaction.guildId!);
+  const { pvs } = await getGuildPrefixes(interaction.guildId!);
   const embed = new EmbedBuilder()
     .setColor(0x5000ff)
-    .setTitle("\u2699\uFE0F System Prefixes")
-    .setDescription("These prefixes define how members trigger each bot system. Click **Edit Prefixes** to change them.")
+    .setTitle("\u2699\uFE0F Bot Prefix")
+    .setDescription("This prefix triggers all bot commands (PVS, Manager, CTP staff commands, Announcements, Jail, `setup`).\n\nNote: the CTP `tag` and one-tap `tag <game>` commands always work without a prefix.")
     .addFields(
-      { name: "\uD83C\uDFA7 PVS Prefix", value: `\`${pvs}\``, inline: true },
-      { name: "\uD83C\uDFA7 Manager Prefix", value: `\`${mgr}\``, inline: true },
-      { name: "\uD83C\uDFAE CTP Prefix", value: `\`${ctp}\``, inline: true },
-      { name: "\uD83D\uDCE3 Announcements Prefix", value: `\`${ann}\``, inline: true },
+      { name: "\uD83E\uDDE9 Current Prefix", value: `\`${pvs}\``, inline: true },
     )
     .setFooter({ text: "Night Stars \u2022 NS Bot" });
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder().setCustomId("pfx_edit").setLabel("Edit Prefixes").setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId("pfx_edit").setLabel("Edit Prefix").setStyle(ButtonStyle.Primary),
   );
   await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
 }
 
 async function handlePrefixEditButton(interaction: ButtonInteraction) {
-  const { pvs, mgr, ctp, ann } = await getGuildPrefixes(interaction.guildId!);
-  const modal = new ModalBuilder().setCustomId("pfx_modal").setTitle("Edit System Prefixes");
+  const { pvs } = await getGuildPrefixes(interaction.guildId!);
+  const modal = new ModalBuilder().setCustomId("pfx_modal").setTitle("Edit Bot Prefix");
   const pvsInput = new TextInputBuilder()
-    .setCustomId("pfx_pvs").setLabel("PVS Prefix (room owner commands)").setStyle(TextInputStyle.Short)
+    .setCustomId("pfx_pvs").setLabel("Bot Prefix (used by all systems)").setStyle(TextInputStyle.Short)
     .setValue(pvs).setMinLength(1).setMaxLength(5).setRequired(true);
-  const mgrInput = new TextInputBuilder()
-    .setCustomId("pfx_mgr").setLabel("Manager Prefix (staff PV commands)").setStyle(TextInputStyle.Short)
-    .setValue(mgr).setMinLength(1).setMaxLength(5).setRequired(true);
-  const ctpInput = new TextInputBuilder()
-    .setCustomId("pfx_ctp").setLabel("CTP Prefix (call-to-play commands)").setStyle(TextInputStyle.Short)
-    .setValue(ctp).setMinLength(1).setMaxLength(5).setRequired(true);
-  const annInput = new TextInputBuilder()
-    .setCustomId("pfx_ann").setLabel("Announcements Prefix (ann commands)").setStyle(TextInputStyle.Short)
-    .setValue(ann).setMinLength(1).setMaxLength(5).setRequired(true);
   modal.addComponents(
     new ActionRowBuilder<TextInputBuilder>().addComponents(pvsInput),
-    new ActionRowBuilder<TextInputBuilder>().addComponents(mgrInput),
-    new ActionRowBuilder<TextInputBuilder>().addComponents(ctpInput),
-    new ActionRowBuilder<TextInputBuilder>().addComponents(annInput),
   );
   await interaction.showModal(modal);
 }
@@ -780,27 +765,23 @@ async function handlePrefixEditButton(interaction: ButtonInteraction) {
 async function handlePrefixModalSubmit(interaction: ModalSubmitInteraction) {
   const guildId = interaction.guildId!;
   const pvs = interaction.fields.getTextInputValue("pfx_pvs").trim();
-  const mgr = interaction.fields.getTextInputValue("pfx_mgr").trim();
-  const ctp = interaction.fields.getTextInputValue("pfx_ctp").trim();
-  const ann = interaction.fields.getTextInputValue("pfx_ann").trim();
+  // Single unified prefix — mirror it across all four columns so every
+  // module (which may read any of them) sees the same value.
   await db
     .update(botConfigTable)
-    .set({ pvsPrefix: pvs, managerPrefix: mgr, ctpPrefix: ctp, annPrefix: ann })
+    .set({ pvsPrefix: pvs, managerPrefix: pvs, ctpPrefix: pvs, annPrefix: pvs })
     .where(eq(botConfigTable.guildId, guildId));
   const embed = new EmbedBuilder()
     .setColor(0x00c851)
-    .setTitle("\u2705 Prefixes Updated")
+    .setTitle("\u2705 Bot Prefix Updated")
     .addFields(
-      { name: "\uD83C\uDFA7 PVS Prefix", value: `\`${pvs}\``, inline: true },
-      { name: "\uD83C\uDFA7 Manager Prefix", value: `\`${mgr}\``, inline: true },
-      { name: "\uD83C\uDFAE CTP Prefix", value: `\`${ctp}\``, inline: true },
-      { name: "\uD83D\uDCE3 Announcements Prefix", value: `\`${ann}\``, inline: true },
+      { name: "\uD83E\uDDE9 New Prefix", value: `\`${pvs}\``, inline: true },
     )
     .setFooter({ text: "Night Stars \u2022 NS Bot" });
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId("pfx_edit").setLabel("Edit Again").setStyle(ButtonStyle.Secondary),
   );
-  await interaction.update({ embeds: [embed], components: [row] });
+  await (interaction as any).update({ embeds: [embed], components: [row] });
 }
 
 

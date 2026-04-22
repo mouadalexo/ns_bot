@@ -17,8 +17,17 @@ import { botConfigTable, jailCasesTable } from "@workspace/db";
 import { eq, and, desc } from "drizzle-orm";
 import { isMainGuild } from "../../utils/guildFilter.js";
 
-const JAIL_PREFIX = "=";
 const CONFIRMATION_TTL = 3000;
+
+async function getJailPrefix(guildId: string): Promise<string> {
+  const rows = await db
+    .select({ pvsPrefix: botConfigTable.pvsPrefix })
+    .from(botConfigTable)
+    .where(eq(botConfigTable.guildId, guildId))
+    .limit(1);
+  return rows[0]?.pvsPrefix ?? "=";
+}
+
 const CASE_TTL = 7000;
 const CLEANUP_HOURS = 10;
 
@@ -156,9 +165,10 @@ export function registerJailModule(client: Client) {
       if (message.author.bot) return;
       if (!message.guild) return;
       if (!isMainGuild(message.guild.id)) return;
-      if (!message.content.startsWith(JAIL_PREFIX)) return;
+      const jailPrefix = await getJailPrefix(message.guild.id);
+      if (!message.content.startsWith(jailPrefix)) return;
 
-      const content = message.content.slice(JAIL_PREFIX.length).trim();
+      const content = message.content.slice(jailPrefix.length).trim();
       const lower = content.toLowerCase();
 
       if (!lower.startsWith("jail ") && !lower.startsWith("unjail ") && !lower.startsWith("case ")) return;
