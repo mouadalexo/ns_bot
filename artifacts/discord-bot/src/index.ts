@@ -20,6 +20,7 @@ import { registerStageLockModule } from "./modules/stage-lock/index.js";
 import { registerMoveModule } from "./modules/move/index.js";
 import { registerClearModule } from "./modules/clear/index.js";
 import { registerWelcomeModule } from "./modules/welcome/index.js";
+import { registerMasterSetupModule } from "./modules/master-setup/index.js";
 import { registerPanelCommands } from "./panels/index.js";
 
 const BOT_INSTANCE_LOCK_KEY = 489215731;
@@ -262,5 +263,6 @@ async function startBot(token: string): Promise<void> {
     registerMoveModule(client);
     registerClearModule(client);
     registerWelcomeModule(client);
+    registerMasterSetupModule(client);
   });
 }

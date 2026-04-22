@@ -83,6 +83,7 @@ import {
   handleSetupMoveCommand,
   handleSetupClearCommand,
 } from "./welcome.js";
+import { handleMasterSetupButton } from "./master.js";
 
 function buildAllCommandsEmbed(pvs = "=", mgr = "+", ctp = "-", ann = "!") {
   return new EmbedBuilder()
@@ -444,6 +445,10 @@ export async function registerPanelCommands(client: Client) {
       ];
       if (interaction.customId.startsWith("wc_")) {
         try { await handleWelcomeButton(interaction as ButtonInteraction); } catch (err) { console.error("Welcome button error:", err); }
+        return;
+      }
+      if (interaction.customId.startsWith("ms_")) {
+        try { await handleMasterSetupButton(interaction as ButtonInteraction); } catch (err) { console.error("Master setup button error:", err); }
         return;
       }
       if (panelIds.includes(interaction.customId) || interaction.customId.startsWith("ct_") || interaction.customId.startsWith("rg_")) {
