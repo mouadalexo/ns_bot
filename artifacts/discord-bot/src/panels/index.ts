@@ -92,9 +92,7 @@ import {
   openMovePanel,
   handleMovePowerfulSelect,
   handleMoveConfirmationSelect,
-  handleMovePanelSave,
   handleMovePanelReset,
-  handleMovePanelPreview,
 } from "./move.js";
 import {
   openClearPanel,
@@ -567,7 +565,11 @@ export async function registerPanelCommands(client: Client) {
         return;
       }
       if (interaction.customId.startsWith("mv_")) {
-        try { await handleMoveButton(interaction as ButtonInteraction); } catch (err) { console.error("Move button error:", err); }
+        if (interaction.customId.startsWith("mv_accept:") || interaction.customId.startsWith("mv_reject:")) {
+          try { await handleMoveButton(interaction as ButtonInteraction); } catch (err) { console.error("Move button error:", err); }
+        } else {
+          await handleButtonInteraction(interaction as ButtonInteraction);
+        }
         return;
       }
       if (panelIds.includes(interaction.customId) || interaction.customId.startsWith("ct_") || interaction.customId.startsWith("rg_")) {
@@ -800,12 +802,8 @@ async function handleButtonInteraction(interaction: ButtonInteraction) {
       await handleAnnColorBack(interaction);
     } else if (customId.startsWith("rg_")) {
       await handleRoleGiverButton(interaction);
-    } else if (customId === "mv_save") {
-      await handleMovePanelSave(interaction);
     } else if (customId === "mv_reset") {
       await handleMovePanelReset(interaction);
-    } else if (customId === "mv_preview") {
-      await handleMovePanelPreview(interaction);
     } else if (customId === "cl_save") {
       await handleClearPanelSave(interaction);
     } else if (customId === "cl_reset") {

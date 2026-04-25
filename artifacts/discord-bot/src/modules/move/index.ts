@@ -92,6 +92,7 @@ async function performMove(
   actor: GuildMember,
   target: GuildMember,
   destChannel: VoiceBasedChannel,
+  bypassHierarchy = false,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   const guild = actor.guild;
   const me = guild.members.me;
@@ -100,7 +101,7 @@ async function performMove(
   }
   const isAdmin = actor.permissions.has(PermissionsBitField.Flags.Administrator);
   const targetTopRole = target.roles.highest.position;
-  if (!isAdmin && actor.roles.highest.position <= targetTopRole && actor.id !== guild.ownerId) {
+  if (!bypassHierarchy && !isAdmin && actor.roles.highest.position <= targetTopRole && actor.id !== guild.ownerId) {
     return { ok: false, reason: "You can't move someone with an equal or higher role." };
   }
   if (me.roles.highest.position <= targetTopRole) {
@@ -319,7 +320,7 @@ export async function handleMoveButton(interaction: ButtonInteraction) {
     return;
   }
 
-  const result = await performMove(actor, target, dest);
+  const result = await performMove(actor, target, dest, true);
   pendingMoves.delete(reqId);
 
   if (!result.ok) {

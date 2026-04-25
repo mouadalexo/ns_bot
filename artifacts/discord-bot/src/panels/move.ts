@@ -44,6 +44,18 @@ async function loadMoveConfig(guildId: string): Promise<MovePanelState> {
   };
 }
 
+async function saveMoveConfig(guildId: string, state: MovePanelState): Promise<void> {
+  await pool.query(
+    `insert into bot_config (guild_id, move_role_ids_json, move_request_role_ids_json, updated_at)
+     values ($1, $2, $3, now())
+     on conflict (guild_id) do update
+       set move_role_ids_json = excluded.move_role_ids_json,
+           move_request_role_ids_json = excluded.move_request_role_ids_json,
+           updated_at = now()`,
+    [guildId, JSON.stringify(state.powerful), JSON.stringify(state.confirmation)],
+  );
+}
+
 function fmtRoles(ids: string[]): string {
   if (!ids.length) return "_none_";
   return ids.map((id) => `<@&${id}>`).join(", ");
@@ -68,7 +80,7 @@ function buildEmbed(state: MovePanelState): EmbedBuilder {
         "\u2002\u2022 Members with the **Move Members** permission \u2014 auto-allowed for confirmation flow",
         "\u2002\u2022 **Couples** in the social system \u2014 can powerful-move each other instantly",
         "",
-        "Pick roles in the menus below, then click **Save**. Use **Preview Config** to see what's currently saved in the database.",
+        "Pick roles in the menus below \u2014 changes save automatically when you select a role.",
       ].join("\n"),
     )
     .setFooter({ text: "Night Stars \u2022 Move" });
@@ -102,8 +114,6 @@ function buildComponents(state: MovePanelState) {
   );
 
   const actionRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder().setCustomId("mv_save").setLabel("Save").setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId("mv_preview").setLabel("Preview Config").setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId("mv_reset").setLabel("Reset").setStyle(ButtonStyle.Danger),
   );
 
@@ -149,81 +159,26 @@ export async function openMovePanel(interaction: ChatInputCommandInteraction | B
 }
 
 export async function handleMovePowerfulSelect(interaction: RoleSelectMenuInteraction) {
+  if (!interaction.guildId) return;
   const state = getOrInitState(interaction.user.id);
   state.powerful = [...new Set(interaction.values)];
+  await saveMoveConfig(interaction.guildId, state);
   await interaction.update(render(state));
 }
 
 export async function handleMoveConfirmationSelect(interaction: RoleSelectMenuInteraction) {
-  const state = getOrInitState(interaction.user.id);
-  state.confirmation = [...new Set(interaction.values)];
-  await interaction.update(render(state));
-}
-
-export async function handleMovePanelSave(interaction: ButtonInteraction) {
   if (!interaction.guildId) return;
   const state = getOrInitState(interaction.user.id);
-
-  await pool.query(
-    `insert into bot_config (guild_id, move_role_ids_json, move_request_role_ids_json, updated_at)
-     values ($1, $2, $3, now())
-     on conflict (guild_id) do update
-       set move_role_ids_json = excluded.move_role_ids_json,
-           move_request_role_ids_json = excluded.move_request_role_ids_json,
-           updated_at = now()`,
-    [interaction.guildId, JSON.stringify(state.powerful), JSON.stringify(state.confirmation)],
-  );
-
-  await interaction.reply({
-    embeds: [
-      new EmbedBuilder()
-        .setColor(0x00c851)
-        .setTitle("\u2705 Move Roles Saved")
-        .setDescription(
-          `**\u26A1 Powerful (instant)** \u2014 ${fmtRoles(state.powerful)}\n` +
-          `**\u2705 Confirmation (target accepts)** \u2014 ${fmtRoles(state.confirmation)}`,
-        )
-        .setFooter({ text: "Night Stars \u2022 Move" }),
-    ],
-    ephemeral: true,
-  });
+  state.confirmation = [...new Set(interaction.values)];
+  await saveMoveConfig(interaction.guildId, state);
+  await interaction.update(render(state));
 }
 
 export async function handleMovePanelReset(interaction: ButtonInteraction) {
+  if (!interaction.guildId) return;
   const state = getOrInitState(interaction.user.id);
   state.powerful = [];
   state.confirmation = [];
+  await saveMoveConfig(interaction.guildId, state);
   await interaction.update(render(state));
-}
-
-export async function handleMovePanelPreview(interaction: ButtonInteraction) {
-  if (!interaction.guildId) return;
-  const saved = await loadMoveConfig(interaction.guildId);
-  const state = getOrInitState(interaction.user.id);
-
-  const diff = (a: string[], b: string[]) =>
-    a.length === b.length && a.every((v) => b.includes(v));
-  const powerfulMatches = diff(state.powerful, saved.powerful);
-  const confirmationMatches = diff(state.confirmation, saved.confirmation);
-  const dirty = !powerfulMatches || !confirmationMatches;
-
-  await interaction.reply({
-    embeds: [
-      new EmbedBuilder()
-        .setColor(TITLE_COLOR)
-        .setTitle("\uD83D\uDC41\uFE0F Current Saved Config")
-        .setDescription(
-          [
-            `**\u26A1 Powerful (instant)** \u2014 ${fmtRoles(saved.powerful)}`,
-            `**\u2705 Confirmation (target accepts)** \u2014 ${fmtRoles(saved.confirmation)}`,
-            "",
-            dirty
-              ? "\u26A0\uFE0F Your panel selections differ from what's saved \u2014 click **Save** to apply them."
-              : "\u2705 Your panel matches the saved config.",
-          ].join("\n"),
-        )
-        .setFooter({ text: "Night Stars \u2022 Move \u2022 Preview" }),
-    ],
-    ephemeral: true,
-  });
 }
