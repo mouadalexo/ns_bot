@@ -209,8 +209,7 @@ function buildCopyRow(url: string): ActionRowBuilder<ButtonBuilder> {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId(`mu_copy:${idUrl}`)
-      .setLabel("Copy")
-      .setEmoji("📋")
+      .setEmoji("🔗")
       .setStyle(ButtonStyle.Secondary)
   );
 }
@@ -220,7 +219,7 @@ interface PostPayload {
   components: ActionRowBuilder<ButtonBuilder>[];
 }
 
-async function buildReleaseEmbeds(album: DeezerAlbum, copyUrl?: string): Promise<PostPayload> {
+async function buildReleaseEmbeds(album: DeezerAlbum, copyUrl?: string, markAsNew = false): Promise<PostPayload> {
   const type        = recordTypeLabel(album.record_type);
   const artistName  = album.artist?.name ?? "Unknown Artist";
   const cover       = album.cover_xl || album.cover_big;
@@ -229,9 +228,8 @@ async function buildReleaseEmbeds(album: DeezerAlbum, copyUrl?: string): Promise
   const trackCount  = album.nb_tracks
     ? `${album.nb_tracks} track${album.nb_tracks !== 1 ? "s" : ""}`
     : "";
-  const isNew       = isRecentRelease(album.release_date);
 
-  const headerLabel = isNew ? `NEW ${type.toUpperCase()} · OUT NOW` : `${type.toUpperCase()}`;
+  const headerLabel = markAsNew ? `NEW ${type.toUpperCase()} · OUT NOW` : `${type.toUpperCase()}`;
 
   const metaParts: string[] = [type];
   if (trackCount)  metaParts.push(trackCount);
@@ -390,13 +388,12 @@ async function searchDeezerForRelease(artist: string, title: string): Promise<De
   return await deezerFetch<DeezerAlbum>(`/album/${albumId}`);
 }
 
-async function buildExternalReleaseEmbeds(meta: UrlMetadata, url: string): Promise<PostPayload> {
+async function buildExternalReleaseEmbeds(meta: UrlMetadata, url: string, markAsNew = false): Promise<PostPayload> {
   const cover  = meta.image;
   const color  = cover ? await extractCoverColor(cover) : FALLBACK_COLOR;
   const type   = meta.recordType || "Release";
-  const isNew  = isRecentYear(meta.year);
 
-  const headerLabel = isNew ? `NEW ${type.toUpperCase()} · OUT NOW` : `${type.toUpperCase()}`;
+  const headerLabel = markAsNew ? `NEW ${type.toUpperCase()} · OUT NOW` : `${type.toUpperCase()}`;
 
   const title  = meta.title || "Untitled";
   const artist = meta.artist;
@@ -676,7 +673,7 @@ async function checkNewReleases(client: Client): Promise<void> {
         const album = await deezerFetch<DeezerAlbum>(`/album/${latest.id}`);
         if (!album) continue;
 
-        await channel.send(await buildReleaseEmbeds(album, album.link));
+        await channel.send(await buildReleaseEmbeds(album, album.link, true));
 
         await pool.query(
           "INSERT INTO music_posted (guild_id, deezer_album_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
