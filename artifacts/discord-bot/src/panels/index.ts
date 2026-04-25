@@ -189,6 +189,19 @@ export function buildAllCommandsEmbed(pvs = "=", mgr = "+", ctp = "-", ann = "!"
       },
       { name: "\u200B", value: "** **", inline: false },
             { name: "\u200B", value: "** **", inline: false },
+
+      { name: "\u200B", value: "** **", inline: false },
+      {
+        name: "\uD83D\uDC9E Social System (everyone)",
+        value: [
+          "`=relationship @user` \u2014 View your or another member's relationship status",
+          "`=propose @user` \u2014 Send a marriage proposal (target gets Accept/Reject DM)",
+          "`=breakup` \u2014 End your current relationship",
+          "`=children` \u2014 View your children list",
+          "`=adopt @user` \u2014 Send an adoption request",
+        ].join("\n"),
+        inline: false,
+      },
       {
         name: "\uD83D\uDD12 Jail System (Hammer Role required)",
         value: [

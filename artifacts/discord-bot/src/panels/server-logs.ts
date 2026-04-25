@@ -130,8 +130,9 @@ export async function handleServerLogsButton(interaction: ButtonInteraction): Pr
   }
 
   if (id === "sl_back_master") {
-    // Re-render the panel anyway — the master panel handler will route ms_*.
-    return openServerLogsPanel(interaction);
+    const { buildMasterSetupEmbed, buildMasterSetupRows } = await import("./master.js");
+    await interaction.update({ embeds: [buildMasterSetupEmbed()], components: buildMasterSetupRows() });
+    return;
   }
 
   if (id.startsWith("sl_toggle_")) {

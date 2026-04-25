@@ -31,7 +31,7 @@ export function registerCTPModule(client: Client) {
       // Cooldown check: exactly "tagcd" or "tag cd"
       const isTagCd = !isCTPTag && (content === "tagcd" || content === "tag cd");
       // One Tap (temp voice): "tag <gamename>" — must be exactly two tokens, no extras
-      const tapMatch = !isCTPTag && !isTagCd ? content.match(/^tag\s+(\S+)\s*$/) : null;
+      const tapMatch = !isCTPTag && !isTagCd ? content.match(/^tag\s+(\S+)(?:\s+([\s\S]+))?$/) : null;
       const isTempTag = !!tapMatch;
 
       if (!isCTPTag && !isTempTag && !isTagCd) return;
@@ -286,6 +286,10 @@ export function registerCTPModule(client: Client) {
         const gameInput = tapMatch[1].trim();
         if (!gameInput) return;
 
+        // Extract optional inline message (preserve original casing)
+        const origTagParts = message.content.trim().match(/^tag\s+\S+(?:\s+([\s\S]+))?$/i);
+        const inlineMsg = origTagParts?.[1]?.trim() ?? null;
+
         const [tvConfig] = await db
           .select()
           .from(ctpTempVoiceConfigTable)
@@ -372,7 +376,7 @@ export function registerCTPModule(client: Client) {
           embeds: [
             new EmbedBuilder()
               .setColor(0x5000ff)
-              .setDescription(`**${member.displayName}** is looking for **${tvMatch.gameName}** players!`)
+              .setDescription(inlineMsg ? `**${member.displayName}** — ${inlineMsg}` : `**${member.displayName}** is looking for **${tvMatch.gameName}** players!`)
               .setFooter({ text: `Next tag available in ${formatSeconds(tvConfig.cooldownSeconds)}` }),
           ],
           allowedMentions: { roles: [tvMatch.roleId] },
