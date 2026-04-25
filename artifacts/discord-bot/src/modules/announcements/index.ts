@@ -574,27 +574,54 @@ async function resolveTags(text: string, guild: Guild): Promise<string> {
   return result;
 }
 
-// Find Discord voice/stage channel links in text and turn each into a "Join"
-// Link button row, similar to how Discord renders voice links in normal chat.
+// Find Discord voice/stage channel references in text and turn each into a
+// "Join" Link button row, similar to how Discord renders voice links in chat.
+//
+// We accept three forms so the staff don't have to worry about how they wrote
+// it:
+//   1. Full link:  https://discord.com/channels/<guildId>/<channelId>
+//   2. Channel mention from the autocomplete:  <#channelId>
+//   3. Bare channel ID (17-20 digits) — last-resort fallback so a copy-pasted
+//      ID still becomes a button.
 function buildVoiceChannelButtons(
   text: string,
   guild: Guild,
 ): ActionRowBuilder<ButtonBuilder>[] {
   const rows: ActionRowBuilder<ButtonBuilder>[] = [];
   const seen = new Set<string>();
+  const candidates: string[] = [];
+
+  // Form 1: full discord channel URLs (any subdomain).
   const linkRe = /https?:\/\/(?:www\.|ptb\.|canary\.)?discord(?:app)?\.com\/channels\/(\d+)\/(\d+)/g;
-  let m: RegExpExecArray | null;
+  for (let m: RegExpExecArray | null; (m = linkRe.exec(text)) !== null; ) {
+    const [, gId, cId] = m;
+    if (gId === guild.id) candidates.push(cId);
+  }
+
+  // Form 2: <#channelId> mentions.
+  const mentionRe = /<#(\d{17,20})>/g;
+  for (let m: RegExpExecArray | null; (m = mentionRe.exec(text)) !== null; ) {
+    candidates.push(m[1]);
+  }
+
+  // Form 3: bare numeric IDs (only if they look like Discord snowflakes and
+  // are not already part of a link/mention we matched above).
+  const bareRe = /(?<![\/<\d])(\d{17,20})(?![\/>\d])/g;
+  for (let m: RegExpExecArray | null; (m = bareRe.exec(text)) !== null; ) {
+    candidates.push(m[1]);
+  }
+
   let current = new ActionRowBuilder<ButtonBuilder>();
   let count = 0;
-  while ((m = linkRe.exec(text)) !== null) {
-    const [url, gId, cId] = m;
-    if (gId !== guild.id || seen.has(cId)) continue;
+  for (const cId of candidates) {
+    if (seen.has(cId)) continue;
     const ch = guild.channels.cache.get(cId);
     if (!ch) continue;
     const isVoice =
       ch.type === ChannelType.GuildVoice || ch.type === ChannelType.GuildStageVoice;
     if (!isVoice) continue;
     seen.add(cId);
+    const url = `https://discord.com/channels/${guild.id}/${cId}`;
     const label = `🔊 Join ${ch.name ?? "Voice"}`.slice(0, 80);
     current.addComponents(
       new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(label).setURL(url),
@@ -893,7 +920,7 @@ async function handleAnnButton(interaction: ButtonInteraction, client: Client): 
       titleResolved, descResolved, addResolved,
       titleColor, descColor, addColor, imageUrl
     );
-    const voiceRows = buildVoiceChannelButtons(`${descResolved}\n${addResolved}`, guild);
+    const voiceRows = buildVoiceChannelButtons(`${titleResolved}\n${descResolved}\n${addResolved}`, guild);
 
     await interaction.reply({
       content: "-# 👁️ Preview — not posted yet. Use **✏️ Edit Details** to change or **✅ Send** to post.",
@@ -1028,7 +1055,7 @@ async function handleAnnButton(interaction: ButtonInteraction, client: Client): 
       titleResolved, descResolved, addResolved,
       titleColor, descColor, addColor, imageUrl
     );
-    const voiceRows = buildVoiceChannelButtons(`${descResolved}\n${addResolved}`, guild);
+    const voiceRows = buildVoiceChannelButtons(`${titleResolved}\n${descResolved}\n${addResolved}`, guild);
     await channel.send({
       embeds,
       ...(voiceRows.length ? { components: voiceRows } : {}),
