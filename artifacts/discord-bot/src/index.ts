@@ -24,6 +24,7 @@ import { registerClearModule } from "./modules/clear/index.js";
 import { registerWelcomeModule } from "./modules/welcome/index.js";
 import { registerMasterSetupModule } from "./modules/master-setup/index.js";
 import { registerSocialModule, ensureSocialSchema } from "./modules/social/index.js";
+import { registerMusicModule, ensureMusicSchema } from "./modules/music/index.js";
 import { registerPanelCommands } from "./panels/index.js";
 
 const BOT_INSTANCE_LOCK_KEY = 781034562;
@@ -215,6 +216,7 @@ async function startBot(token: string): Promise<void> {
   await ensureRuntimeSchema();
   await ensureSocialSchema();
   await ensureServerLogsSchema();
+  await ensureMusicSchema();
 
   const client = new Client({
     intents: [
@@ -304,5 +306,6 @@ async function startBot(token: string): Promise<void> {
     registerWelcomeModule(client);
     registerMasterSetupModule(client);
     registerSocialModule(client);
+    registerMusicModule(client);
   });
 }
