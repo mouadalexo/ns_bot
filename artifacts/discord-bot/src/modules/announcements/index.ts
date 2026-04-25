@@ -1053,11 +1053,19 @@ async function handleAnnButton(interaction: ButtonInteraction, client: Client): 
     const channel = await guild.channels.fetch(state.channelId).catch(() => null) as TextChannel | null;
     if (!channel) return;
 
-    // Build the announcement embed + voice buttons, and (if the tag toggle is
-    // on) attach the @everyone ping directly on this same message instead of
-    // posting a separate ping message that has to be deleted afterwards. That
-    // separate ping was leaving leftover messages whenever the auto-delete
-    // failed (missing permissions, rate-limit, restart, etc).
+    // Send @everyone / role tag FIRST if tag is on, then auto-delete after 5s
+    // so the ping fires the notification but the message doesn't clutter the
+    // channel.
+    if (state.tagOn) {
+      const boldTitle = titleResolved ? toBold(titleResolved.replace(/^##\s*/, "").trim()) : "";
+      const pingContent = boldTitle ? `${boldTitle} @everyone` : "@everyone";
+      const ping = await channel.send({
+        content: pingContent,
+        allowedMentions: { parse: ["everyone", "roles", "users"] },
+      });
+      setTimeout(() => ping.delete().catch(() => {}), 5000);
+    }
+
     const embeds = buildAnnouncementEmbeds(
       titleResolved, descResolved, addResolved,
       titleColor, descColor, addColor, imageUrl
@@ -1067,7 +1075,6 @@ async function handleAnnButton(interaction: ButtonInteraction, client: Client): 
       guild,
     );
     await channel.send({
-      content: state.tagOn ? "@everyone" : undefined,
       embeds,
       ...(voiceRows.length ? { components: voiceRows } : {}),
       allowedMentions: { parse: ["everyone", "roles", "users"] },
