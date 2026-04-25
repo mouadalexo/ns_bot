@@ -14,6 +14,7 @@ import {
   Guild,
   ButtonInteraction,
   ModalSubmitInteraction,
+  ChannelType,
 } from "discord.js";
 import { db } from "@workspace/db";
 import { botConfigTable } from "@workspace/db";
@@ -140,10 +141,27 @@ interface AnnSetupState {
   lockedToEvent: boolean;
   filled: boolean;
   panelInteraction?: ButtonInteraction;
+  lastActivity?: number;
 }
 
 const annSetupState = new Map<string, AnnSetupState>();
 const SEP = "\u2500".repeat(32);
+
+// Sessions are kept alive as long as the user keeps interacting.
+// Auto-cleanup only removes sessions inactive for over 2 hours.
+const STATE_TTL_MS = 2 * 60 * 60 * 1000;
+function touchState(state: AnnSetupState): void {
+  state.lastActivity = Date.now();
+  annSetupState.set(state.userId, state);
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, st] of annSetupState) {
+    if (st.lastActivity && now - st.lastActivity > STATE_TTL_MS) {
+      annSetupState.delete(id);
+    }
+  }
+}, 30 * 60 * 1000).unref?.();
 
 // ── Panel Embed & Components ──────────────────────────────────────────────────
 function buildSetupPanelEmbed(state: AnnSetupState): EmbedBuilder {
@@ -401,10 +419,11 @@ async function openAnnSetupInChannel(message: Message, mode: "ann" | "event"): P
   });
 
   state.panelMessageId = launcher.id;
-  annSetupState.set(state.userId, state);
+  touchState(state);
+  // Keep the launcher visible for 30 minutes so staff have time to come back.
   setTimeout(() => {
     launcher.delete().catch(() => {});
-  }, 60_000);
+  }, 30 * 60 * 1000);
 }
 
 // ── =an inline announcement helpers ──────────────────────────────────────────
@@ -429,6 +448,10 @@ async function resolveTags(text: string, guild: Guild): Promise<string> {
       resolved = "@everyone";
     } else if (lower === "here") {
       resolved = "@here";
+    } else if (name.startsWith("#")) {
+      const chName = name.slice(1).toLowerCase();
+      const ch = guild.channels.cache.find((c) => c.name?.toLowerCase() === chName);
+      if (ch) resolved = `<#${ch.id}>`;
     } else {
       const role = guild.roles.cache.find((r) => r.name.toLowerCase() === lower);
       if (role) {
@@ -447,6 +470,42 @@ async function resolveTags(text: string, guild: Guild): Promise<string> {
     result = result.slice(0, index) + resolved + result.slice(index + match.length);
   }
   return result;
+}
+
+// Find Discord voice/stage channel links in text and turn each into a "Join"
+// Link button row, similar to how Discord renders voice links in normal chat.
+function buildVoiceChannelButtons(
+  text: string,
+  guild: Guild,
+): ActionRowBuilder<ButtonBuilder>[] {
+  const rows: ActionRowBuilder<ButtonBuilder>[] = [];
+  const seen = new Set<string>();
+  const linkRe = /https?:\/\/(?:www\.|ptb\.|canary\.)?discord(?:app)?\.com\/channels\/(\d+)\/(\d+)/g;
+  let m: RegExpExecArray | null;
+  let current = new ActionRowBuilder<ButtonBuilder>();
+  let count = 0;
+  while ((m = linkRe.exec(text)) !== null) {
+    const [url, gId, cId] = m;
+    if (gId !== guild.id || seen.has(cId)) continue;
+    const ch = guild.channels.cache.get(cId);
+    if (!ch) continue;
+    const isVoice =
+      ch.type === ChannelType.GuildVoice || ch.type === ChannelType.GuildStageVoice;
+    if (!isVoice) continue;
+    seen.add(cId);
+    const label = `🔊 Join ${ch.name ?? "Voice"}`.slice(0, 80);
+    current.addComponents(
+      new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(label).setURL(url),
+    );
+    count++;
+    if (count % 5 === 0) {
+      rows.push(current);
+      current = new ActionRowBuilder<ButtonBuilder>();
+    }
+    if (rows.length >= 5) break;
+  }
+  if (current.components.length > 0 && rows.length < 5) rows.push(current);
+  return rows;
 }
 
 async function handleInlineAnn(message: Message, prefix: string): Promise<void> {
@@ -574,6 +633,7 @@ async function handleAnnButton(interaction: ButtonInteraction, client: Client): 
     await interaction.reply({ content: "\u274C Session expired. Run the command again.", ephemeral: true });
     return;
   }
+  touchState(state);
 
   // Open: reply ephemerally, store interaction for later updates
   if (customId.startsWith("an_open:")) {
@@ -711,19 +771,21 @@ async function handleAnnButton(interaction: ButtonInteraction, client: Client): 
     const descColor:  ColorResolvable = isEvent ? colors.eventDescColor  : colors.annDescColor;
     const addColor:   ColorResolvable = isEvent ? colors.eventColor      : colors.annAddColor;
 
-    const titleResolved = state.title      ? await resolveEmojiCodes(state.title, guild)      : "";
-    const descResolved  =                    await resolveEmojiCodes(state.description, guild);
-    const addResolved   = state.additional ? await resolveEmojiCodes(state.additional, guild) : "";
+    const titleResolved = state.title      ? await resolveEmojiCodes(await resolveTags(state.title, guild), guild)      : "";
+    const descResolved  =                    await resolveEmojiCodes(await resolveTags(state.description, guild), guild);
+    const addResolved   = state.additional ? await resolveEmojiCodes(await resolveTags(state.additional, guild), guild) : "";
     const imageUrl      = state.modalImageUrl || state.attachmentImageUrl;
 
     const previewEmbeds = buildAnnouncementEmbeds(
       titleResolved, descResolved, addResolved,
       titleColor, descColor, addColor, imageUrl
     );
+    const voiceRows = buildVoiceChannelButtons(`${descResolved}\n${addResolved}`, guild);
 
     await interaction.reply({
       content: "-# 👁️ Preview — not posted yet. Use **✏️ Edit Details** to change or **✅ Send** to post.",
       embeds: previewEmbeds,
+      components: voiceRows,
       ephemeral: true,
     });
     return;
@@ -755,9 +817,9 @@ async function handleAnnButton(interaction: ButtonInteraction, client: Client): 
     const descColor:  ColorResolvable = isEvent ? colors.eventDescColor  : colors.annDescColor;
     const addColor:   ColorResolvable = isEvent ? colors.eventColor : colors.annAddColor;
 
-    const titleResolved = state.title      ? await resolveEmojiCodes(state.title,       guild) : "";
-    const descResolved  =                    await resolveEmojiCodes(state.description,  guild);
-    const addResolved   = state.additional ? await resolveEmojiCodes(state.additional,   guild) : "";
+    const titleResolved = state.title      ? await resolveEmojiCodes(await resolveTags(state.title,       guild), guild) : "";
+    const descResolved  =                    await resolveEmojiCodes(await resolveTags(state.description,  guild), guild);
+    const addResolved   = state.additional ? await resolveEmojiCodes(await resolveTags(state.additional,   guild), guild) : "";
     const imageUrl = state.modalImageUrl || state.attachmentImageUrl;
 
     const channel = await guild.channels.fetch(state.channelId).catch(() => null) as TextChannel | null;
@@ -775,7 +837,12 @@ async function handleAnnButton(interaction: ButtonInteraction, client: Client): 
       titleResolved, descResolved, addResolved,
       titleColor, descColor, addColor, imageUrl
     );
-    await channel.send({ embeds });
+    const voiceRows = buildVoiceChannelButtons(`${descResolved}\n${addResolved}`, guild);
+    await channel.send({
+      embeds,
+      ...(voiceRows.length ? { components: voiceRows } : {}),
+      allowedMentions: { parse: ["everyone", "roles", "users"] },
+    });
 
     // Logs
     const [cfg] = await db
@@ -814,7 +881,7 @@ async function handleAnnModal(interaction: ModalSubmitInteraction, client: Clien
   state.additional    = interaction.fields.getTextInputValue("an_additional").trim();
   state.modalImageUrl = interaction.fields.getTextInputValue("an_image").trim();
   state.filled        = !!state.description;
-  annSetupState.set(ownerId, state);
+  touchState(state);
 
   if (state.panelInteraction) {
     try {
