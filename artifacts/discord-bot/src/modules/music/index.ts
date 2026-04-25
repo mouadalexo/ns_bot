@@ -8,8 +8,8 @@ import {
   PermissionFlagsBits,
   Message,
   ColorResolvable,
-  ButtonInteraction,
 } from "discord.js";
+import sharp from "sharp";
 import { pool } from "@workspace/db";
 import { isMainGuild } from "../../utils/guildFilter.js";
 
@@ -50,7 +50,7 @@ interface DeezerTrack {
   link: string;
 }
 
-interface DeezerArtist {
+export interface DeezerArtist {
   id: number;
   name: string;
   link: string;
@@ -94,12 +94,6 @@ function detectPlatform(url: string): string {
   return "Music";
 }
 
-function formatDuration(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
-
 function recordTypeLabel(type: string): string {
   switch (type?.toLowerCase()) {
     case "single":  return "Single";
@@ -109,46 +103,109 @@ function recordTypeLabel(type: string): string {
   }
 }
 
-const MUSIC_COLOR = 0x5000ff as ColorResolvable;
+function formatReleaseDate(date: string): string {
+  if (!date) return "";
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return date;
+  return d.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+}
 
-function buildReleaseEmbeds(album: DeezerAlbum): EmbedBuilder[] {
-  const type       = recordTypeLabel(album.record_type);
-  const year       = album.release_date?.slice(0, 4) ?? "";
-  const artistName = album.artist?.name ?? "Unknown Artist";
-  const embeds: EmbedBuilder[] = [];
+const FALLBACK_COLOR = 0x5000ff as ColorResolvable;
 
-  embeds.push(
-    new EmbedBuilder()
-      .setColor(MUSIC_COLOR)
-      .setDescription(`🎵 ${toBold(artistName)} — ${toBold(`New ${type}`)}`)
-  );
+/**
+ * Extracts a vibrant, eye-catching color from an image URL using sharp.
+ * Strategy: downscale to 32x32, scan pixels, score each by saturation * lightness-balance,
+ * skip near-white/near-black/desaturated pixels. Returns the most "alive" pixel.
+ */
+async function extractCoverColor(url: string): Promise<ColorResolvable> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return FALLBACK_COLOR;
+    const buf = Buffer.from(await res.arrayBuffer());
 
-  const mainEmbed = new EmbedBuilder()
-    .setColor(MUSIC_COLOR)
-    .setDescription(
-      `${toBold(album.title)}` +
-      (year              ? ` ﹒ ${year}`                                          : "") +
-      (album.nb_tracks   ? ` ﹒ ${album.nb_tracks} track${album.nb_tracks !== 1 ? "s" : ""}` : "")
-    );
+    const { data, info } = await sharp(buf)
+      .resize(48, 48, { fit: "cover" })
+      .removeAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
 
-  const cover = album.cover_xl || album.cover_big;
-  if (cover) mainEmbed.setImage(cover);
+    let bestScore = -1;
+    let bestR = 0, bestG = 0, bestB = 0;
+    const channels = info.channels;
 
-  if (album.tracks?.data?.length) {
-    const tracks = album.tracks.data.slice(0, 5);
-    const lines  = tracks.map(
-      (t, i) => `\`${(i + 1).toString().padStart(2)}\` ${t.title}${t.duration ? ` — ${formatDuration(t.duration)}` : ""}`
-    );
-    if (album.tracks.data.length > 5) lines.push(`*+ ${album.tracks.data.length - 5} more…*`);
-    mainEmbed.addFields({ name: "Tracklist", value: lines.join("\n"), inline: false });
+    for (let i = 0; i < data.length; i += channels) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      const lightness = (max + min) / 2;
+      const delta = max - min;
+      const saturation = delta === 0 ? 0 : delta / (255 - Math.abs(2 * lightness - 255) || 1);
+
+      // Skip too dark, too light, or too gray
+      if (lightness < 30 || lightness > 230) continue;
+      if (saturation < 0.25) continue;
+
+      // Reward saturation; prefer mid-light pixels (40-200) for vibrancy
+      const lightnessScore = 1 - Math.abs(lightness - 130) / 130;
+      const score = saturation * 2 + lightnessScore;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestR = r; bestG = g; bestB = b;
+      }
+    }
+
+    if (bestScore < 0) {
+      // Fallback: average color
+      let sumR = 0, sumG = 0, sumB = 0, count = 0;
+      for (let i = 0; i < data.length; i += channels) {
+        sumR += data[i]; sumG += data[i + 1]; sumB += data[i + 2];
+        count++;
+      }
+      bestR = Math.round(sumR / count);
+      bestG = Math.round(sumG / count);
+      bestB = Math.round(sumB / count);
+    }
+
+    return ((bestR << 16) | (bestG << 8) | bestB) as ColorResolvable;
+  } catch {
+    return FALLBACK_COLOR;
   }
+}
 
-  embeds.push(mainEmbed);
+async function buildReleaseEmbeds(album: DeezerAlbum): Promise<EmbedBuilder[]> {
+  const type        = recordTypeLabel(album.record_type);
+  const artistName  = album.artist?.name ?? "Unknown Artist";
+  const cover       = album.cover_xl || album.cover_big;
+  const color       = cover ? await extractCoverColor(cover) : FALLBACK_COLOR;
+  const releaseDate = formatReleaseDate(album.release_date);
+  const trackCount  = album.nb_tracks
+    ? `${album.nb_tracks} track${album.nb_tracks !== 1 ? "s" : ""}`
+    : "";
+
+  const footerParts: string[] = [];
+  if (releaseDate) footerParts.push(`Released ${releaseDate}`);
+  if (trackCount)  footerParts.push(trackCount);
+
+  const main = new EmbedBuilder()
+    .setColor(color)
+    .setAuthor({ name: `🎵 New ${type}` })
+    .setTitle(album.title)
+    .setURL(album.link || null)
+    .setDescription(`by ${toBold(artistName)}`);
+
+  if (cover)              main.setImage(cover);
+  if (footerParts.length) main.setFooter({ text: footerParts.join("  •  ") });
+
+  const embeds: EmbedBuilder[] = [main];
 
   if (album.link) {
     embeds.push(
       new EmbedBuilder()
-        .setColor(MUSIC_COLOR)
+        .setColor(color)
         .setDescription(`🎧 **[Listen on Deezer](${album.link})**`)
     );
   }
@@ -160,10 +217,10 @@ function buildGenericDropEmbeds(url: string, djName: string): EmbedBuilder[] {
   const platform = detectPlatform(url);
   return [
     new EmbedBuilder()
-      .setColor(MUSIC_COLOR)
+      .setColor(FALLBACK_COLOR)
       .setDescription(`🎵 ${toBold("New Drop")} — shared by **${djName}**`),
     new EmbedBuilder()
-      .setColor(MUSIC_COLOR)
+      .setColor(FALLBACK_COLOR)
       .setDescription(`🎧 **[Listen on ${platform}](${url})**`),
   ];
 }
@@ -226,7 +283,7 @@ async function handlePost(message: Message): Promise<void> {
     if (albumId) {
       const album = await deezerFetch<DeezerAlbum>(`/album/${albumId}`);
       if (album) {
-        await targetChannel.send({ embeds: buildReleaseEmbeds(album) });
+        await targetChannel.send({ embeds: await buildReleaseEmbeds(album) });
         return;
       }
     }
@@ -236,7 +293,14 @@ async function handlePost(message: Message): Promise<void> {
   await targetChannel.send({ embeds: buildGenericDropEmbeds(url, djName) });
 }
 
-const pendingAdd = new Map<string, { artists: DeezerArtist[]; guildId: string; channelId: string }>();
+export const pendingAdd = new Map<string, { artists: DeezerArtist[]; guildId: string; channelId: string }>();
+
+export async function searchArtists(query: string, limit = 5): Promise<DeezerArtist[]> {
+  const searchRes = await deezerFetch<{ data: DeezerArtist[] }>(
+    `/search/artist?q=${encodeURIComponent(query)}&limit=${limit}`
+  );
+  return searchRes?.data?.slice(0, 3) ?? [];
+}
 
 async function handleAdd(message: Message): Promise<void> {
   if (!await hasDjAccess(message)) {
@@ -250,15 +314,11 @@ async function handleAdd(message: Message): Promise<void> {
     return;
   }
 
-  const searchRes = await deezerFetch<{ data: DeezerArtist[] }>(
-    `/search/artist?q=${encodeURIComponent(query)}&limit=5`
-  );
-  if (!searchRes?.data?.length) {
+  const artists = await searchArtists(query);
+  if (!artists.length) {
     await tempReply(message, `❌ No artist found for \`${query}\` on Deezer.`);
     return;
   }
-
-  const artists = searchRes.data.slice(0, 3);
 
   if (artists.length === 1) {
     await commitAddArtist(message.client, message.guildId!, message.channelId, artists[0]);
@@ -289,7 +349,7 @@ async function handleAdd(message: Message): Promise<void> {
   const picker = await (message.channel as TextChannel).send({
     embeds: [
       new EmbedBuilder()
-        .setColor(MUSIC_COLOR)
+        .setColor(FALLBACK_COLOR)
         .setTitle("🎵 Artist Search Results")
         .setDescription(`Multiple artists found for **${query}**. Pick one:`)
         .addFields(
@@ -310,10 +370,10 @@ async function handleAdd(message: Message): Promise<void> {
   }, 30_000);
 }
 
-async function commitAddArtist(
+export async function commitAddArtist(
   client: Client,
   guildId: string,
-  channelId: string,
+  channelId: string | null,
   artist: DeezerArtist
 ): Promise<void> {
   const albumsRes = await deezerFetch<DeezerArtistAlbumsResponse>(`/artist/${artist.id}/albums?limit=1`);
@@ -326,16 +386,25 @@ async function commitAddArtist(
     [guildId, artist.id.toString(), artist.name, lastReleaseId]
   );
 
+  if (!channelId) return;
   const ch = await client.channels.fetch(channelId).catch(() => null) as TextChannel | null;
   if (ch) {
     const embed = new EmbedBuilder()
-      .setColor(MUSIC_COLOR)
+      .setColor(FALLBACK_COLOR)
       .setDescription(`✅ **${artist.name}** added to music tracking.\nI'll notify when they drop something new.`)
       .setThumbnail(artist.picture_xl ?? null)
       .setFooter({ text: "Night Stars • Music" });
     const m = await ch.send({ embeds: [embed] });
     setTimeout(() => m.delete().catch(() => {}), 8_000);
   }
+}
+
+export async function removeArtistById(guildId: string, deezerArtistId: string): Promise<boolean> {
+  const res = await pool.query(
+    "DELETE FROM music_artists WHERE guild_id = $1 AND deezer_artist_id = $2",
+    [guildId, deezerArtistId]
+  );
+  return (res.rowCount ?? 0) > 0;
 }
 
 async function checkNewReleases(client: Client): Promise<void> {
@@ -386,7 +455,7 @@ async function checkNewReleases(client: Client): Promise<void> {
         const album = await deezerFetch<DeezerAlbum>(`/album/${latest.id}`);
         if (!album) continue;
 
-        await channel.send({ embeds: buildReleaseEmbeds(album) });
+        await channel.send({ embeds: await buildReleaseEmbeds(album) });
 
         await pool.query(
           "INSERT INTO music_posted (guild_id, deezer_album_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",

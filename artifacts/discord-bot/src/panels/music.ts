@@ -7,11 +7,24 @@ import {
   ButtonInteraction,
   RoleSelectMenuInteraction,
   ChannelSelectMenuInteraction,
+  StringSelectMenuInteraction,
+  ModalSubmitInteraction,
   RoleSelectMenuBuilder,
   ChannelSelectMenuBuilder,
+  StringSelectMenuBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
   ChannelType,
 } from "discord.js";
 import { pool } from "@workspace/db";
+import {
+  searchArtists,
+  commitAddArtist,
+  removeArtistById,
+  pendingAdd,
+  type DeezerArtist,
+} from "../modules/music/index.js";
 
 const MUSIC_COLOR = 0x5000ff;
 
@@ -32,14 +45,17 @@ async function saveMusicConfig(guildId: string, djRoleId: string | null, channel
   );
 }
 
-async function buildMusicPanelEmbed(guildId: string): Promise<EmbedBuilder> {
-  const cfg = await getMusicConfig(guildId);
-
-  const artistsRes = await pool.query<{ artist_name: string }>(
-    "SELECT artist_name FROM music_artists WHERE guild_id = $1 ORDER BY added_at ASC",
+async function getTrackedArtists(guildId: string): Promise<{ deezer_artist_id: string; artist_name: string }[]> {
+  const res = await pool.query<{ deezer_artist_id: string; artist_name: string }>(
+    "SELECT deezer_artist_id, artist_name FROM music_artists WHERE guild_id = $1 ORDER BY added_at ASC",
     [guildId]
   );
-  const artists = artistsRes.rows.map(r => r.artist_name);
+  return res.rows;
+}
+
+async function buildMusicPanelEmbed(guildId: string): Promise<EmbedBuilder> {
+  const cfg     = await getMusicConfig(guildId);
+  const artists = await getTrackedArtists(guildId);
 
   return new EmbedBuilder()
     .setColor(MUSIC_COLOR)
@@ -56,17 +72,17 @@ async function buildMusicPanelEmbed(guildId: string): Promise<EmbedBuilder> {
         inline: true,
       },
       {
-        name: "Tracked Artists",
+        name: `Tracked Artists (${artists.length})`,
         value: artists.length
-          ? artists.map(a => `• ${a}`).join("\n")
-          : "*None yet — use `=add artist name` to start tracking*",
+          ? artists.map((a, i) => `\`${(i + 1).toString().padStart(2, "0")}\` ${a.artist_name}`).join("\n")
+          : "*None yet — click **Add Artist** below*",
         inline: false,
       }
     )
     .setFooter({ text: "Night Stars • Music" });
 }
 
-function buildMusicPanelComponents(): ActionRowBuilder<any>[] {
+function buildMusicPanelComponents(hasArtists: boolean): ActionRowBuilder<any>[] {
   return [
     new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(
       new RoleSelectMenuBuilder()
@@ -85,6 +101,15 @@ function buildMusicPanelComponents(): ActionRowBuilder<any>[] {
     ),
     new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
+        .setCustomId("mu_add_artist")
+        .setLabel("➕ Add Artist")
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId("mu_remove_artist")
+        .setLabel("➖ Remove Artist")
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(!hasArtists),
+      new ButtonBuilder()
         .setCustomId("mu_reset")
         .setLabel("🗑️ Reset Config")
         .setStyle(ButtonStyle.Danger)
@@ -92,10 +117,23 @@ function buildMusicPanelComponents(): ActionRowBuilder<any>[] {
   ];
 }
 
+async function refreshPanel(
+  interaction: ButtonInteraction | RoleSelectMenuInteraction | ChannelSelectMenuInteraction | StringSelectMenuInteraction
+): Promise<void> {
+  const guildId = interaction.guildId!;
+  const artists = await getTrackedArtists(guildId);
+  await interaction.update({
+    embeds: [await buildMusicPanelEmbed(guildId)],
+    components: buildMusicPanelComponents(artists.length > 0),
+  });
+}
+
 export async function openMusicPanel(interaction: ChatInputCommandInteraction): Promise<void> {
+  const guildId = interaction.guildId!;
+  const artists = await getTrackedArtists(guildId);
   await interaction.reply({
-    embeds: [await buildMusicPanelEmbed(interaction.guildId!)],
-    components: buildMusicPanelComponents(),
+    embeds: [await buildMusicPanelEmbed(guildId)],
+    components: buildMusicPanelComponents(artists.length > 0),
     ephemeral: true,
   });
 }
@@ -105,10 +143,7 @@ export async function handleMusicDjRoleSelect(interaction: RoleSelectMenuInterac
   const cfg     = await getMusicConfig(guildId);
   const roleId  = interaction.values[0] ?? null;
   await saveMusicConfig(guildId, roleId, cfg.notification_channel_id);
-  await interaction.update({
-    embeds: [await buildMusicPanelEmbed(guildId)],
-    components: buildMusicPanelComponents(),
-  });
+  await refreshPanel(interaction);
 }
 
 export async function handleMusicChannelSelect(interaction: ChannelSelectMenuInteraction): Promise<void> {
@@ -116,16 +151,179 @@ export async function handleMusicChannelSelect(interaction: ChannelSelectMenuInt
   const cfg       = await getMusicConfig(guildId);
   const channelId = interaction.values[0] ?? null;
   await saveMusicConfig(guildId, cfg.dj_role_id, channelId);
-  await interaction.update({
-    embeds: [await buildMusicPanelEmbed(guildId)],
-    components: buildMusicPanelComponents(),
-  });
+  await refreshPanel(interaction);
 }
 
 export async function handleMusicReset(interaction: ButtonInteraction): Promise<void> {
   await saveMusicConfig(interaction.guildId!, null, null);
+  await refreshPanel(interaction);
+}
+
+export async function handleMusicAddArtistButton(interaction: ButtonInteraction): Promise<void> {
+  const modal = new ModalBuilder()
+    .setCustomId("mu_add_modal")
+    .setTitle("Add Artist to Tracking")
+    .addComponents(
+      new ActionRowBuilder<TextInputBuilder>().addComponents(
+        new TextInputBuilder()
+          .setCustomId("artist_query")
+          .setLabel("Artist name")
+          .setPlaceholder("e.g. Daft Punk")
+          .setStyle(TextInputStyle.Short)
+          .setMinLength(1)
+          .setMaxLength(80)
+          .setRequired(true)
+      )
+    );
+  await interaction.showModal(modal);
+}
+
+export async function handleMusicAddModalSubmit(interaction: ModalSubmitInteraction): Promise<void> {
+  const query = interaction.fields.getTextInputValue("artist_query").trim();
+  if (!query) {
+    await interaction.reply({ content: "❌ Empty query.", ephemeral: true });
+    return;
+  }
+
+  await interaction.deferReply({ ephemeral: true });
+
+  const artists = await searchArtists(query);
+  if (!artists.length) {
+    await interaction.editReply({ content: `❌ No artist found for \`${query}\` on Deezer.` });
+    return;
+  }
+
+  if (artists.length === 1) {
+    const cfg = await getMusicConfig(interaction.guildId!);
+    await commitAddArtist(interaction.client, interaction.guildId!, cfg.notification_channel_id, artists[0]);
+    await interaction.editReply({
+      content: `✅ **${artists[0].name}** added to music tracking.\nReopen \`/music\` to see the updated list.`,
+    });
+    return;
+  }
+
+  pendingAdd.set(interaction.user.id, {
+    artists,
+    guildId: interaction.guildId!,
+    channelId: interaction.channelId ?? "",
+  });
+
+  const rows: ActionRowBuilder<ButtonBuilder>[] = [];
+  artists.forEach((a, i) => {
+    rows.push(
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`mu_pick:${interaction.user.id}:${i}`)
+          .setLabel(`${i + 1}. ${a.name}${a.nb_fan ? ` (${(a.nb_fan / 1000).toFixed(0)}K fans)` : ""}`)
+          .setStyle(ButtonStyle.Primary)
+      )
+    );
+  });
+  rows.push(
+    new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`mu_pick_cancel:${interaction.user.id}`)
+        .setLabel("✕ Cancel")
+        .setStyle(ButtonStyle.Secondary)
+    )
+  );
+
+  await interaction.editReply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor(MUSIC_COLOR)
+        .setTitle("🎵 Multiple matches found")
+        .setDescription(`Pick the right artist for **${query}**:`)
+        .addFields(
+          artists.map((a, i) => ({
+            name: `${i + 1}. ${a.name}`,
+            value: `${(a.nb_fan ?? 0).toLocaleString()} fans`,
+            inline: true,
+          }))
+        ),
+    ],
+    components: rows,
+  });
+
+  setTimeout(() => pendingAdd.delete(interaction.user.id), 60_000);
+}
+
+export async function handleMusicPickButton(interaction: ButtonInteraction): Promise<void> {
+  const parts = interaction.customId.split(":");
+  const userId = parts[1];
+  const index  = parseInt(parts[2]);
+
+  if (interaction.user.id !== userId) {
+    await interaction.reply({ content: "❌ This is not your panel.", ephemeral: true });
+    return;
+  }
+
+  const pending = pendingAdd.get(userId);
+  if (!pending) {
+    await interaction.update({ content: "❌ Session expired.", embeds: [], components: [] }).catch(() => {});
+    return;
+  }
+
+  const artist: DeezerArtist | undefined = pending.artists[index];
+  if (!artist) {
+    await interaction.reply({ content: "❌ Invalid selection.", ephemeral: true });
+    return;
+  }
+
+  pendingAdd.delete(userId);
+  const cfg = await getMusicConfig(interaction.guildId!);
+  await commitAddArtist(interaction.client, interaction.guildId!, cfg.notification_channel_id, artist);
   await interaction.update({
-    embeds: [await buildMusicPanelEmbed(interaction.guildId!)],
-    components: buildMusicPanelComponents(),
+    content: `✅ **${artist.name}** added to music tracking.\nReopen \`/music\` to see the updated list.`,
+    embeds: [],
+    components: [],
+  });
+}
+
+export async function handleMusicPickCancel(interaction: ButtonInteraction): Promise<void> {
+  const userId = interaction.customId.split(":")[1];
+  pendingAdd.delete(userId);
+  await interaction.update({ content: "✕ Cancelled.", embeds: [], components: [] });
+}
+
+export async function handleMusicRemoveButton(interaction: ButtonInteraction): Promise<void> {
+  const artists = await getTrackedArtists(interaction.guildId!);
+  if (!artists.length) {
+    await interaction.reply({ content: "❌ No artists tracked yet.", ephemeral: true });
+    return;
+  }
+
+  const select = new StringSelectMenuBuilder()
+    .setCustomId("mu_remove_select")
+    .setPlaceholder("Select an artist to remove")
+    .setMinValues(1)
+    .setMaxValues(Math.min(artists.length, 25))
+    .addOptions(
+      artists.slice(0, 25).map(a => ({
+        label: a.artist_name.slice(0, 100),
+        value: a.deezer_artist_id,
+      }))
+    );
+
+  await interaction.reply({
+    content: "Select one or more artists to stop tracking:",
+    components: [new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select)],
+    ephemeral: true,
+  });
+}
+
+export async function handleMusicRemoveSelect(interaction: StringSelectMenuInteraction): Promise<void> {
+  const guildId = interaction.guildId!;
+  const removed: string[] = [];
+  for (const id of interaction.values) {
+    const ok = await removeArtistById(guildId, id);
+    if (ok) removed.push(id);
+  }
+
+  await interaction.update({
+    content: removed.length
+      ? `✅ Removed **${removed.length}** artist${removed.length === 1 ? "" : "s"} from tracking.\nReopen \`/music\` to see the updated list.`
+      : "❌ Nothing was removed.",
+    components: [],
   });
 }

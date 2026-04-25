@@ -107,6 +107,12 @@ import {
   handleMusicDjRoleSelect,
   handleMusicChannelSelect,
   handleMusicReset,
+  handleMusicAddArtistButton,
+  handleMusicAddModalSubmit,
+  handleMusicPickButton,
+  handleMusicPickCancel,
+  handleMusicRemoveButton,
+  handleMusicRemoveSelect,
 } from "./music.js";
 import {
   openAutoModPanel,
@@ -590,8 +596,20 @@ export async function registerPanelCommands(client: Client) {
         return;
       }
       if (interaction.customId.startsWith("mu_")) {
-        if (interaction.customId === "mu_reset") {
-          try { await handleMusicReset(interaction as ButtonInteraction); } catch (err) { console.error("Music button error:", err); }
+        try {
+          if (interaction.customId === "mu_reset") {
+            await handleMusicReset(interaction as ButtonInteraction);
+          } else if (interaction.customId === "mu_add_artist") {
+            await handleMusicAddArtistButton(interaction as ButtonInteraction);
+          } else if (interaction.customId === "mu_remove_artist") {
+            await handleMusicRemoveButton(interaction as ButtonInteraction);
+          } else if (interaction.customId.startsWith("mu_pick_cancel:")) {
+            await handleMusicPickCancel(interaction as ButtonInteraction);
+          } else if (interaction.customId.startsWith("mu_pick:")) {
+            await handleMusicPickButton(interaction as ButtonInteraction);
+          }
+        } catch (err) {
+          console.error("Music button error:", err);
         }
         return;
       }
@@ -624,6 +642,8 @@ export async function registerPanelCommands(client: Client) {
         try { await handleCtpTagStringSelect(interaction as StringSelectMenuInteraction); } catch (err) { console.error("CTP temp select error:", err); }
       } else if (interaction.customId.startsWith("wc_")) {
         try { await handleWelcomeStringSelect(interaction as StringSelectMenuInteraction); } catch (err) { console.error("Welcome select error:", err); }
+      } else if (interaction.customId === "mu_remove_select") {
+        try { await handleMusicRemoveSelect(interaction as StringSelectMenuInteraction); } catch (err) { console.error("Music remove select error:", err); }
       }
       return;
     }
@@ -683,6 +703,8 @@ export async function registerPanelCommands(client: Client) {
         await handleRoleGiverModalSubmit(interaction as ModalSubmitInteraction);
       } else if (customId.startsWith("wc_modal_")) {
         try { await handleWelcomeModalSubmit(interaction as ModalSubmitInteraction); } catch (err) { console.error("Welcome modal error:", err); }
+      } else if (customId === "mu_add_modal") {
+        try { await handleMusicAddModalSubmit(interaction as ModalSubmitInteraction); } catch (err) { console.error("Music add modal error:", err); }
       }
       return;
     }
