@@ -143,7 +143,11 @@ export function registerMoveModule(client: Client) {
       const cfg = await getMoveRoleConfig(message.guild.id);
       const isAdmin = actor.permissions.has(PermissionsBitField.Flags.Administrator);
       const hasInstant = cfg.instant.some((id) => actor.roles.cache.has(id));
-      const hasRequest = cfg.request.some((id) => actor.roles.cache.has(id));
+      const hasRequestRole = cfg.request.some((id) => actor.roles.cache.has(id));
+      // Anyone with the Move Members permission is auto-allowed for the
+      // confirmation flow (without needing a configured role).
+      const hasMovePerm = actor.permissions.has(PermissionsBitField.Flags.MoveMembers);
+      const hasRequest = hasRequestRole || hasMovePerm;
 
       // Couple check
       const partnerOfActor = await getPartner(message.guild.id, actor.id);
@@ -188,9 +192,9 @@ export function registerMoveModule(client: Client) {
       }
 
       // Decide path:
-      //  Admin or instant role → direct move (current behavior)
-      //  Request role OR couple-partner → confirmation flow
-      if (isAdmin || hasInstant) {
+      //  Admin, instant role, or couple-partner → direct move (no confirm)
+      //  Request role / Move Members permission → confirmation flow
+      if (isAdmin || hasInstant || isCouple) {
         await message.delete().catch(() => {});
         const r = await performMove(actor, target, actorVoice);
         if (!r.ok) {

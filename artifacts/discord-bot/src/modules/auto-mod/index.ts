@@ -554,7 +554,7 @@ const TIMEOUT_MS = 10 * 60_000;
 
 // Long-message rule
 const LONG_MSG_THRESHOLD = 300;
-const LINE_BREAK_THRESHOLD = 5;
+const LINE_BREAK_THRESHOLD = 10;
 const LONG_MSG_RESET_MS = 30 * 60_000; // forgive after 30 quiet minutes
 
 const spamRecords = new Map<string, SpamRecord>();
@@ -715,13 +715,20 @@ function isAdmin(member: GuildMember | null): boolean {
 async function handleMessage(message: Message): Promise<void> {
   if (!message.guild || message.author.bot) return;
   if (!isMainGuild(message.guildId)) return;
-  if (
-    message.channel.type !== ChannelType.GuildText &&
-    message.channel.type !== ChannelType.GuildAnnouncement &&
-    message.channel.type !== ChannelType.PublicThread &&
-    message.channel.type !== ChannelType.PrivateThread &&
-    message.channel.type !== ChannelType.AnnouncementThread
-  ) {
+
+  const isTextLikeChannel =
+    message.channel.type === ChannelType.GuildText ||
+    message.channel.type === ChannelType.GuildAnnouncement ||
+    message.channel.type === ChannelType.PublicThread ||
+    message.channel.type === ChannelType.PrivateThread ||
+    message.channel.type === ChannelType.AnnouncementThread;
+  // Voice channels & stage channels can have a built-in text chat — let
+  // auto-responses fire there too, but skip the moderation rules.
+  const isVoiceTextChat =
+    message.channel.type === ChannelType.GuildVoice ||
+    message.channel.type === ChannelType.GuildStageVoice;
+
+  if (!isTextLikeChannel && !isVoiceTextChat) {
     return;
   }
 
@@ -733,6 +740,12 @@ async function handleMessage(message: Message): Promise<void> {
   const globallyIgnored = memberHasAny(member, config.ignoredRoleIds);
 
   let deleted = false;
+
+  // In voice-channel text chats, only run auto-respond — skip moderation rules.
+  if (isVoiceTextChat) {
+    await runAutoRespond(message, member);
+    return;
+  }
 
   // --- Image-only channels --------------------------------------------------
   if (
@@ -891,6 +904,11 @@ async function handleMessage(message: Message): Promise<void> {
   if (deleted) return;
 
   // --- Auto-Respond ---------------------------------------------------------
+  await runAutoRespond(message, member);
+}
+
+async function runAutoRespond(message: Message, member: GuildMember | null): Promise<void> {
+  const config = await getCachedConfig(message.guildId!);
   const responses = await getCachedResponses(message.guildId!);
   if (!responses.length) return;
   for (const r of responses) {

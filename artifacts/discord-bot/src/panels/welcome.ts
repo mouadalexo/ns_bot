@@ -268,28 +268,60 @@ export async function handleSetupMoveCommand(interaction: ChatInputCommandIntera
     });
     return;
   }
-  const roles = [
-    interaction.options.getRole("role-1", true),
-    interaction.options.getRole("role-2"),
-    interaction.options.getRole("role-3"),
-    interaction.options.getRole("role-4"),
-    interaction.options.getRole("role-5"),
+  // Powerful (instant) roles
+  const powerful = [
+    interaction.options.getRole("powerful-1"),
+    interaction.options.getRole("powerful-2"),
+    interaction.options.getRole("powerful-3"),
+    interaction.options.getRole("powerful-4"),
+    interaction.options.getRole("powerful-5"),
   ].filter((r): r is NonNullable<typeof r> => !!r);
-  const ids = [...new Set(roles.map((r) => r.id))];
+  const powerfulIds = [...new Set(powerful.map((r) => r.id))];
+
+  // Confirmation (request) roles
+  const confirmation = [
+    interaction.options.getRole("confirmation-1"),
+    interaction.options.getRole("confirmation-2"),
+    interaction.options.getRole("confirmation-3"),
+    interaction.options.getRole("confirmation-4"),
+    interaction.options.getRole("confirmation-5"),
+  ].filter((r): r is NonNullable<typeof r> => !!r);
+  const confirmationIds = [...new Set(confirmation.map((r) => r.id))];
+
+  if (powerfulIds.length === 0 && confirmationIds.length === 0) {
+    await interaction.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xff4d4d)
+          .setDescription("\u274C Pick at least one powerful or confirmation role."),
+      ],
+      ephemeral: true,
+    });
+    return;
+  }
+
   const { pool } = await import("@workspace/db");
   await pool.query(
-    `insert into bot_config (guild_id, move_role_ids_json, updated_at)
-     values ($1, $2, now())
-     on conflict (guild_id) do update set move_role_ids_json = excluded.move_role_ids_json, updated_at = now()`,
-    [interaction.guildId!, JSON.stringify(ids)],
+    `insert into bot_config (guild_id, move_role_ids_json, move_request_role_ids_json, updated_at)
+     values ($1, $2, $3, now())
+     on conflict (guild_id) do update
+       set move_role_ids_json = excluded.move_role_ids_json,
+           move_request_role_ids_json = excluded.move_request_role_ids_json,
+           updated_at = now()`,
+    [interaction.guildId!, JSON.stringify(powerfulIds), JSON.stringify(confirmationIds)],
   );
+
+  const fmt = (ids: string[]) => (ids.length ? ids.map((id) => `<@&${id}>`).join(", ") : "_none_");
   await interaction.reply({
     embeds: [
       new EmbedBuilder()
         .setColor(0x00c851)
         .setTitle("\u2705 Move Roles Saved")
         .setDescription(
-          `Members with these roles can now use \`aji @user\`:\n${ids.map((id) => `<@&${id}>`).join(", ")}\n\nAdmins can always use it.`,
+          `**Powerful (instant move)** \u2014 ${fmt(powerfulIds)}\n` +
+          `**Confirmation (target accepts)** \u2014 ${fmt(confirmationIds)}\n\n` +
+          "Admins and members with the **Move Members** permission can also use the confirmation flow. " +
+          "Couples in the social system can powerful-move each other instantly.",
         )
         .setFooter({ text: "Night Stars \u2022 Move" }),
     ],

@@ -273,17 +273,26 @@ export async function registerPanelCommands(client: Client) {
   const token = process.env.DISCORD_TOKEN;
   if (!token) throw new Error("DISCORD_TOKEN is missing");
 
-  const setupCommand = new SlashCommandBuilder()
-    .setName("setup")
-    .setDescription("Configure Night Stars bot systems")
+  const pvsCommand = new SlashCommandBuilder()
+    .setName("pvs")
+    .setDescription("Configure the Private Voice System (PVS)")
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
-    .addSubcommand((sub) => sub.setName("pvs").setDescription("Set up the Private Voice System (PVS)"))
-    .addSubcommand((sub) => sub.setName("ctp-category").setDescription("Set up CTP for games with their own category"))
-    .addSubcommand((sub) => sub.setName("ctp-onetap").setDescription("Set up CTP Onetap \u2014 temp voice game tagging"))
     .toJSON();
 
-  const setupJailCommand = new SlashCommandBuilder()
-    .setName("setup-jail")
+  const ctpCategoryCommand = new SlashCommandBuilder()
+    .setName("ctp-category")
+    .setDescription("Configure CTP for games with their own category")
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
+    .toJSON();
+
+  const ctpOnetapCommand = new SlashCommandBuilder()
+    .setName("ctp-onetap")
+    .setDescription("Configure CTP Onetap \u2014 temp voice game tagging")
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
+    .toJSON();
+
+  const jailCommand = new SlashCommandBuilder()
+    .setName("jail")
     .setDescription("Configure the jail system")
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
     .addRoleOption((option) =>
@@ -318,9 +327,8 @@ export async function registerPanelCommands(client: Client) {
 
   const annCommand = new SlashCommandBuilder()
     .setName("ann")
-    .setDescription("Announcement system")
+    .setDescription("Configure the announcements system (tag role, embed colors)")
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
-    .addSubcommand((sub) => sub.setName("setup").setDescription("Configure the announcements system (tag role, embed colors)"))
     .toJSON();
 
   const helpCommand = new SlashCommandBuilder()
@@ -341,23 +349,20 @@ export async function registerPanelCommands(client: Client) {
 
   const generalCommand = new SlashCommandBuilder()
     .setName("general")
-    .setDescription("General bot settings")
+    .setDescription("Set the staff role and blocked channels")
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
-    .addSubcommand((sub) => sub.setName("setup").setDescription("Set the staff role and blocked channels"))
     .toJSON();
 
   const roleGiverCommand = new SlashCommandBuilder()
     .setName("role-giver")
-    .setDescription("Open the Role Giver setup panel")
+    .setDescription("Open the Role Giver panel")
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
-    .addSubcommand((sub) => sub.setName("setup").setDescription("Open the Role Giver setup panel"))
     .toJSON();
 
   const welcomeCommand = new SlashCommandBuilder()
     .setName("welcome")
     .setDescription("Configure the welcome system")
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
-    .addSubcommand((sub) => sub.setName("setup").setDescription("Open the welcome system setup panel"))
     .toJSON();
 
   const automodCommand = new SlashCommandBuilder()
@@ -380,16 +385,29 @@ export async function registerPanelCommands(client: Client) {
       .addRoleOption((o) => o.setName("role-4").setDescription("Additional allowed role").setRequired(false))
       .addRoleOption((o) => o.setName("role-5").setDescription("Additional allowed role").setRequired(false));
 
-  const setupMoveCommand = buildRoleSet(
-    new SlashCommandBuilder()
-      .setName("setup-move")
-      .setDescription("Roles allowed to use 'aji @user' to move members")
-      .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
-  ).toJSON();
+  // /move now takes TWO role groups: powerful (instant move, no confirmation)
+  // and confirmation (target gets accept/reject buttons). Anyone with the
+  // Move Members permission is auto-allowed for the confirmation flow even
+  // without a configured role.
+  const moveCommand = new SlashCommandBuilder()
+    .setName("move")
+    .setDescription("Roles allowed to use 'aji @user' (powerful = instant, confirmation = needs accept)")
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
+    .addRoleOption((o) => o.setName("powerful-1").setDescription("Powerful move role (instant, no confirmation)").setRequired(false))
+    .addRoleOption((o) => o.setName("powerful-2").setDescription("Powerful move role").setRequired(false))
+    .addRoleOption((o) => o.setName("powerful-3").setDescription("Powerful move role").setRequired(false))
+    .addRoleOption((o) => o.setName("powerful-4").setDescription("Powerful move role").setRequired(false))
+    .addRoleOption((o) => o.setName("powerful-5").setDescription("Powerful move role").setRequired(false))
+    .addRoleOption((o) => o.setName("confirmation-1").setDescription("Confirmation move role (target must accept)").setRequired(false))
+    .addRoleOption((o) => o.setName("confirmation-2").setDescription("Confirmation move role").setRequired(false))
+    .addRoleOption((o) => o.setName("confirmation-3").setDescription("Confirmation move role").setRequired(false))
+    .addRoleOption((o) => o.setName("confirmation-4").setDescription("Confirmation move role").setRequired(false))
+    .addRoleOption((o) => o.setName("confirmation-5").setDescription("Confirmation move role").setRequired(false))
+    .toJSON();
 
-  const setupClearCommand = buildRoleSet(
+  const clearCommand = buildRoleSet(
     new SlashCommandBuilder()
-      .setName("setup-clear")
+      .setName("clear")
       .setDescription("Roles allowed to use 'mse7 N' to clear messages")
       .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
   ).toJSON();
@@ -399,7 +417,23 @@ export async function registerPanelCommands(client: Client) {
   const registerForGuild = async (guildId: string, guildName: string) => {
     try {
       await rest.put(Routes.applicationGuildCommands(client.user!.id, guildId), {
-        body: [setupCommand, setupJailCommand, annCommand, generalCommand, roleGiverCommand, welcomeCommand, automodCommand, logsCommand, setupMoveCommand, setupClearCommand, helpCommand, pingCommand, prefixCommand],
+        body: [
+          pvsCommand,
+          ctpCategoryCommand,
+          ctpOnetapCommand,
+          jailCommand,
+          annCommand,
+          generalCommand,
+          roleGiverCommand,
+          welcomeCommand,
+          automodCommand,
+          logsCommand,
+          moveCommand,
+          clearCommand,
+          helpCommand,
+          pingCommand,
+          prefixCommand,
+        ],
       });
       console.log(`Registered slash commands for guild: ${guildName}`);
     } catch (err) {
@@ -421,9 +455,9 @@ export async function registerPanelCommands(client: Client) {
 
     if (interaction.isChatInputCommand()) {
       const name = interaction.commandName;
-      if (name === "setup") {
+      if (name === "pvs" || name === "ctp-category" || name === "ctp-onetap") {
         await handleSetupCommand(interaction as ChatInputCommandInteraction);
-      } else if (name === "setup-jail") {
+      } else if (name === "jail") {
         await handleSetupRejectCommand(interaction as ChatInputCommandInteraction);
       } else if (name === "ann") {
         await handleAnnCommand(interaction as ChatInputCommandInteraction);
@@ -458,9 +492,9 @@ export async function registerPanelCommands(client: Client) {
         } else {
           await openServerLogsPanel(interaction as ChatInputCommandInteraction);
         }
-      } else if (name === "setup-move") {
+      } else if (name === "move") {
         await handleSetupMoveCommand(interaction as ChatInputCommandInteraction);
-      } else if (name === "setup-clear") {
+      } else if (name === "clear") {
         await handleSetupClearCommand(interaction as ChatInputCommandInteraction);
       } else if (name === "ping") {
         await interaction.reply({
@@ -621,10 +655,7 @@ async function handleGeneralCommand(interaction: ChatInputCommandInteraction) {
     return;
   }
   await interaction.deferReply({ ephemeral: true });
-  const sub = interaction.options.getSubcommand();
-  if (sub === "setup") {
-    await openGeneralSetupPanel(interaction as unknown as ButtonInteraction);
-  }
+  await openGeneralSetupPanel(interaction as unknown as ButtonInteraction);
 }
 
 async function handleSetupCommand(interaction: ChatInputCommandInteraction) {
@@ -636,12 +667,12 @@ async function handleSetupCommand(interaction: ChatInputCommandInteraction) {
     return;
   }
   await interaction.deferReply({ ephemeral: true });
-  const sub = interaction.options.getSubcommand();
-  if (sub === "pvs") {
+  const name = interaction.commandName;
+  if (name === "pvs") {
     await openPvsPanel(interaction as unknown as ButtonInteraction);
-  } else if (sub === "ctp-category") {
+  } else if (name === "ctp-category") {
     await openCtpManagePanel(interaction as unknown as ButtonInteraction);
-  } else if (sub === "ctp-onetap") {
+  } else if (name === "ctp-onetap") {
     await openCtpTagPanel(interaction as unknown as ButtonInteraction);
   }
 }
@@ -713,10 +744,7 @@ async function handleAnnCommand(interaction: ChatInputCommandInteraction) {
     return;
   }
   await interaction.deferReply({ ephemeral: true });
-  const sub = interaction.options.getSubcommand();
-  if (sub === "setup") {
-    await openAnnPanel(interaction as unknown as ButtonInteraction);
-  }
+  await openAnnPanel(interaction as unknown as ButtonInteraction);
 }
 
 async function handleButtonInteraction(interaction: ButtonInteraction) {

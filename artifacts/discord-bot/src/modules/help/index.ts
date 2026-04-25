@@ -86,17 +86,17 @@ const STAFF_CATEGORIES: CategoryDef[] = [
     label: "Setup Commands",
     emoji: "\u2699\uFE0F",
     buildCommands: () => [
-      { syntax: "/setup pvs", desc: "Configure the Private Voice System" },
-      { syntax: "/setup ctp-category", desc: "Configure CTP category games" },
-      { syntax: "/setup ctp-onetap", desc: "Configure CTP one-tap (temp voice)" },
-      { syntax: "/setup-jail", desc: "Configure the Jail system" },
-      { syntax: "/ann setup", desc: "Configure Announcements" },
-      { syntax: "/welcome setup", desc: "Configure the Welcome system" },
-      { syntax: "/setup-move", desc: "Set roles allowed to use aji @user" },
-      { syntax: "/setup-clear", desc: "Set roles allowed to use mse7 N" },
+      { syntax: "/pvs", desc: "Configure the Private Voice System" },
+      { syntax: "/ctp-category", desc: "Configure CTP category games" },
+      { syntax: "/ctp-onetap", desc: "Configure CTP one-tap (temp voice)" },
+      { syntax: "/jail", desc: "Configure the Jail system" },
+      { syntax: "/ann", desc: "Configure Announcements" },
+      { syntax: "/welcome", desc: "Configure the Welcome system" },
+      { syntax: "/move", desc: "Set powerful (instant) and confirmation move roles" },
+      { syntax: "/clear", desc: "Set roles allowed to use mse7 N" },
       { syntax: "/logs", desc: "Configure server event logging channels" },
-      { syntax: "/general setup", desc: "Staff role, blocked channels, event hosters" },
-      { syntax: "/role-giver setup", desc: "Open the Role Giver setup panel" },
+      { syntax: "/general", desc: "Staff role, blocked channels, event hosters" },
+      { syntax: "/role-giver", desc: "Open the Role Giver setup panel" },
       { syntax: "/prefix", desc: "View and change the bot prefix" },
     ],
   },
@@ -206,7 +206,7 @@ function buildCategoryComponents(scope: "m" | "s", closeId: string) {
     new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
         .setCustomId(`help_${scope}_back`)
-        .setLabel("Select A Command Category!")
+        .setLabel("← Back")
         .setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId(closeId).setLabel("Close").setEmoji("\u2716\uFE0F").setStyle(ButtonStyle.Danger),
     ),

@@ -191,7 +191,7 @@ function buildConfigEmbed(cfg: AutoModConfig, responseCount: number) {
 
   const spamSection =
     `${fmtBool(cfg.spamEnabled)}  ·  burst rule (5 msgs / 5 s)\n` +
-    `${fmtBool(cfg.longMsgEnabled)}  ·  long-message rule (max **300** chars / **5** line breaks)\n` +
+    `${fmtBool(cfg.longMsgEnabled)}  ·  long-message rule (max **300** chars / **10** line breaks)\n` +
     bullet("First offense", "delete") + "\n" +
     bullet("Repeat offense", "10-minute timeout") + "\n" +
     bullet("Burst — ignored categories", listOrNone(cfg.spamIgnoredCategoryIds, (id) => `<#${id}>`)) + "\n" +
@@ -317,7 +317,8 @@ function buildLinksRows(cfg: AutoModConfig) {
       .setCustomId("am_links_roles")
       .setPlaceholder(cfg.linksIgnoredRoleIds.length ? "Bypass roles (set)" : "Select bypass roles…")
       .setMinValues(0)
-      .setMaxValues(20),
+      .setMaxValues(20)
+      .setDefaultRoles(cfg.linksIgnoredRoleIds.slice(0, 20)),
   );
   const row3 = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId("am_open_root").setLabel("← Back").setStyle(ButtonStyle.Secondary),
@@ -345,7 +346,7 @@ function buildSpamEmbed(cfg: AutoModConfig) {
     .setDescription(
       "**Two independent rules** — toggle each one separately.\n\n" +
         "▸ **Burst rule** — 5 messages within 5 seconds.\n" +
-        "▸ **Long-message rule** — single message over **300 characters** *or* **5 line breaks**.\n\n" +
+        "▸ **Long-message rule** — single message over **300 characters** *or* **10 line breaks**.\n\n" +
         "**1st offense** → message(s) deleted.\n" +
         "**Repeat offense** → 10-minute timeout.\n\n" +
         "Admins and members with server-wide bypass roles are exempt.\n" +
@@ -353,7 +354,7 @@ function buildSpamEmbed(cfg: AutoModConfig) {
     )
     .addFields(
       { name: "Burst rule (5 / 5s)", value: statusBadge(cfg.spamEnabled), inline: true },
-      { name: "Long-message rule (>300 chars / >5 line breaks)", value: statusBadge(cfg.longMsgEnabled), inline: true },
+      { name: "Long-message rule (>300 chars / >10 line breaks)", value: statusBadge(cfg.longMsgEnabled), inline: true },
       {
         name: "Burst rule — ignored categories",
         value: cfg.spamIgnoredCategoryIds.length ? formatChannels(cfg.spamIgnoredCategoryIds) : "_none_",
@@ -413,7 +414,7 @@ function buildLongMsgEmbed(cfg: AutoModConfig) {
     .setColor(COLOR)
     .setTitle("📏  Long-Message Rule")
     .setDescription(
-      "Removes any single message over **300 characters** *or* **5 line breaks**.\n\n" +
+      "Removes any single message over **300 characters** *or* **10 line breaks**.\n\n" +
         "**1st offense** → message deleted.\n" +
         "**Repeat offense** → 10-minute timeout.\n\n" +
         "Use the selectors below to add per-rule exceptions. " +
@@ -421,7 +422,7 @@ function buildLongMsgEmbed(cfg: AutoModConfig) {
     )
     .addFields(
       { name: "Status", value: statusBadge(cfg.longMsgEnabled), inline: true },
-      { name: "Limits", value: "`300 chars` · `5 line breaks`", inline: true },
+      { name: "Limits", value: "`300 chars` · `10 line breaks`", inline: true },
       {
         name: "Ignored categories",
         value: cfg.longMsgIgnoredCategoryIds.length ? formatChannels(cfg.longMsgIgnoredCategoryIds) : "_none_",
@@ -470,7 +471,8 @@ function buildLongMsgRows(cfg: AutoModConfig) {
       .setCustomId("am_longmsg_roles")
       .setPlaceholder(cfg.longMsgIgnoredRoleIds.length ? "Ignored roles (replace selection)" : "Select ignored roles…")
       .setMinValues(0)
-      .setMaxValues(15),
+      .setMaxValues(15)
+      .setDefaultRoles(cfg.longMsgIgnoredRoleIds.slice(0, 15)),
   );
   const row5 = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId("am_open_spam").setLabel("← Back to Anti-Spam").setStyle(ButtonStyle.Secondary),
@@ -679,7 +681,8 @@ function buildIgnoredRows(cfg: AutoModConfig) {
       .setCustomId("am_ignored_roles")
       .setPlaceholder(cfg.ignoredRoleIds.length ? "Bypass roles (set)" : "Select bypass roles…")
       .setMinValues(0)
-      .setMaxValues(20),
+      .setMaxValues(20)
+      .setDefaultRoles(cfg.ignoredRoleIds.slice(0, 20)),
   );
   const row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId("am_open_root").setLabel("← Back").setStyle(ButtonStyle.Secondary),
@@ -885,15 +888,17 @@ function buildResponseEditRows(r: AutoResponse) {
       .setCustomId(`am_resp_roles_${id}`)
       .setPlaceholder(r.enabledRoleIds.length ? "Allowed roles (set)" : "Allowed roles (empty = anyone)")
       .setMinValues(0)
-      .setMaxValues(20),
+      .setMaxValues(20)
+      .setDefaultRoles(r.enabledRoleIds.slice(0, 20)),
   );
   const row3 = new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
     new ChannelSelectMenuBuilder()
       .setCustomId(`am_resp_chs_${id}`)
       .setPlaceholder(r.allowedChannelIds.length ? "Allowed channels (set)" : "Allowed channels (empty = all)")
-      .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+      .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildVoice, ChannelType.GuildStageVoice)
       .setMinValues(0)
-      .setMaxValues(20),
+      .setMaxValues(20)
+      .setDefaultChannels(r.allowedChannelIds.slice(0, 20)),
   );
   const row4 = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId(`am_resp_text_${id}`).setLabel("Edit Trigger / Reply").setStyle(ButtonStyle.Primary),
