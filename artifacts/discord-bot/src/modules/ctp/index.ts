@@ -257,14 +257,8 @@ export function registerCTPModule(client: Client) {
         }
 
         const pingMessage = config.pingMessage ?? "Looking for players!";
-        const pingEmbed = new EmbedBuilder()
-          .setColor(0x5000ff)
-          .setDescription(`**${member.displayName}** — ${pingMessage}`)
-          .setFooter({ text: `Next tag available in ${formatSeconds(config.cooldownSeconds)}` });
-
         await voiceChannel.send({
-          content: `<@&${config.gameRoleId}>`,
-          embeds: [pingEmbed],
+          content: `**${member.displayName}** — ${pingMessage} <@&${config.gameRoleId}>`,
           allowedMentions: { roles: [config.gameRoleId] },
         });
 
@@ -371,14 +365,9 @@ export function registerCTPModule(client: Client) {
           ? (message.channel as TextChannel)
           : (voiceChannel as unknown as TextChannel);
 
+        const pingText = inlineMsg ?? `${member.displayName} is looking for ${tvMatch.gameName} players!`;
         await targetChannel.send({
-          content: `<@&${tvMatch.roleId}>`,
-          embeds: [
-            new EmbedBuilder()
-              .setColor(0x5000ff)
-              .setDescription(inlineMsg ? `**${member.displayName}** — ${inlineMsg}` : `**${member.displayName}** is looking for **${tvMatch.gameName}** players!`)
-              .setFooter({ text: `Next tag available in ${formatSeconds(tvConfig.cooldownSeconds)}` }),
-          ],
+          content: `**${member.displayName}** — ${pingText} <@&${tvMatch.roleId}>`,
           allowedMentions: { roles: [tvMatch.roleId] },
         });
 

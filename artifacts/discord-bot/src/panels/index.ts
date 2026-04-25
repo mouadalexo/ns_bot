@@ -365,6 +365,12 @@ export async function registerPanelCommands(client: Client) {
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
     .toJSON();
 
+  const logsCommand = new SlashCommandBuilder()
+    .setName("logs")
+    .setDescription("Configure server event logging (auto-creates a log channel per event)")
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
+    .toJSON();
+
   const buildRoleSet = (builder: SlashCommandBuilder) =>
     builder
       .addRoleOption((o) => o.setName("role-1").setDescription("Allowed role").setRequired(true))
@@ -392,7 +398,7 @@ export async function registerPanelCommands(client: Client) {
   const registerForGuild = async (guildId: string, guildName: string) => {
     try {
       await rest.put(Routes.applicationGuildCommands(client.user!.id, guildId), {
-        body: [setupCommand, setupJailCommand, annCommand, generalCommand, roleGiverCommand, welcomeCommand, automodCommand, setupMoveCommand, setupClearCommand, helpCommand, pingCommand, prefixCommand],
+        body: [setupCommand, setupJailCommand, annCommand, generalCommand, roleGiverCommand, welcomeCommand, automodCommand, logsCommand, setupMoveCommand, setupClearCommand, helpCommand, pingCommand, prefixCommand],
       });
       console.log(`Registered slash commands for guild: ${guildName}`);
     } catch (err) {
@@ -441,6 +447,15 @@ export async function registerPanelCommands(client: Client) {
           });
         } else {
           await openAutoModPanel(interaction as ChatInputCommandInteraction);
+        }
+      } else if (name === "logs") {
+        if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator)) {
+          await interaction.reply({
+            embeds: [new EmbedBuilder().setColor(0x5000ff).setDescription("\u274C You need **Administrator** permission to use this.")],
+            ephemeral: true,
+          });
+        } else {
+          await openServerLogsPanel(interaction as ChatInputCommandInteraction);
         }
       } else if (name === "setup-move") {
         await handleSetupMoveCommand(interaction as ChatInputCommandInteraction);

@@ -358,7 +358,9 @@ async function cmdAdopt(message: Message, requesterId: string, content: string) 
 export async function handleSocialButton(interaction: ButtonInteraction) {
   const guildId = interaction.guild?.id;
   if (!guildId) return;
-  const [action, groupId] = interaction.customId.split(":");
+  const firstColon = interaction.customId.indexOf(":");
+  const action = interaction.customId.slice(0, firstColon);
+  const groupId = interaction.customId.slice(firstColon + 1);
   if (!groupId) return;
   const accept = action === "soc_accept";
   const userId = interaction.user.id;

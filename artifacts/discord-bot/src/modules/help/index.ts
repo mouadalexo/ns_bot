@@ -60,7 +60,7 @@ const MEMBER_CATEGORIES: CategoryDef[] = [
     emoji: "\uD83C\uDFAE",
     buildCommands: () => [
       { syntax: "tag", desc: "Ping the game role for your current voice category" },
-      { syntax: "tag <gamename>", desc: "One-tap ping in a temp voice category (e.g. tag valorant)" },
+      { syntax: "tag <gamename> [message]", desc: "One-tap ping — optionally add a custom message (e.g. tag valorant lets play!)" },
       { syntax: "tagcd", desc: "Show the remaining tag cooldown for your category" },
     ],
   },
@@ -69,14 +69,11 @@ const MEMBER_CATEGORIES: CategoryDef[] = [
     label: "Social Commands",
     emoji: "\uD83D\uDC95",
     buildCommands: (p) => [
-      { syntax: `${p.pvs}relationship`, desc: "Show your relationship status" },
-      { syntax: `${p.pvs}propose @user`, desc: "Send a proposal (10-minute window)" },
-      { syntax: `${p.pvs}accept`, desc: "Accept your most recent pending request" },
-      { syntax: `${p.pvs}reject`, desc: "Reject your most recent pending request" },
-      { syntax: `${p.pvs}partner`, desc: "Show your current partner" },
+      { syntax: `${p.pvs}relationship [@user]`, desc: "Show your or another member's relationship & partner status" },
+      { syntax: `${p.pvs}propose @user`, desc: "Send a marriage proposal — target gets Accept/Reject buttons" },
       { syntax: `${p.pvs}breakup`, desc: "End your current relationship" },
       { syntax: `${p.pvs}children`, desc: "List your children (max 3)" },
-      { syntax: `${p.pvs}addchild @user`, desc: "Send an adoption request" },
+      { syntax: `${p.pvs}adopt @user`, desc: "Send an adoption request — target accepts/rejects via buttons" },
     ],
   },
 ];
