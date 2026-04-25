@@ -21,6 +21,8 @@ import {
   RoleSelectMenuBuilder,
 } from "discord.js";
 import { isMainGuild } from "../utils/guildFilter.js";
+import { handleSocialButton } from "../modules/social/index.js";
+import { handleMoveButton } from "../modules/move/index.js";
 import { db, pool } from "@workspace/db";
 import { botConfigTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
@@ -59,6 +61,7 @@ import {
   handleGeneralBlockedChSelect,
   handleGeneralClearRolesSelect,
   handleGeneralMoveRolesSelect,
+  handleGeneralMoveRequestRolesSelect,
   handleGeneralPanelNext,
   handleGeneralPanelBack,
   handleGeneralPanelSave,
@@ -96,6 +99,10 @@ import {
   handleAutoModStringSelect,
   handleAutoModModal,
 } from "./automod.js";
+import {
+  handleServerLogsButton,
+  handleServerLogsChannelSelect,
+} from "./server-logs.js";
 import { sendStaffHelp, handleHelpButton, handleHelpSelect } from "../modules/help/index.js";
 
 export function buildAllCommandsEmbed(pvs = "=", mgr = "+", ctp = "-", ann = "!") {
@@ -482,8 +489,20 @@ export async function registerPanelCommands(client: Client) {
         try { await handleAutoModButton(interaction as ButtonInteraction); } catch (err) { console.error("AutoMod button error:", err); }
         return;
       }
+      if (interaction.customId.startsWith("sl_")) {
+        try { await handleServerLogsButton(interaction as ButtonInteraction); } catch (err) { console.error("ServerLogs button error:", err); }
+        return;
+      }
       if (interaction.customId.startsWith("ms_")) {
         try { await handleMasterSetupButton(interaction as ButtonInteraction); } catch (err) { console.error("Master setup button error:", err); }
+        return;
+      }
+      if (interaction.customId.startsWith("soc_")) {
+        try { await handleSocialButton(interaction as ButtonInteraction); } catch (err) { console.error("Social button error:", err); }
+        return;
+      }
+      if (interaction.customId.startsWith("mv_")) {
+        try { await handleMoveButton(interaction as ButtonInteraction); } catch (err) { console.error("Move button error:", err); }
         return;
       }
       if (panelIds.includes(interaction.customId) || interaction.customId.startsWith("ct_") || interaction.customId.startsWith("rg_")) {
@@ -527,6 +546,10 @@ export async function registerPanelCommands(client: Client) {
       }
       if (interaction.customId.startsWith("am_")) {
         try { await handleAutoModChannelSelect(interaction as ChannelSelectMenuInteraction); } catch (err) { console.error("AutoMod channel select error:", err); }
+        return;
+      }
+      if (interaction.customId.startsWith("sl_")) {
+        try { await handleServerLogsChannelSelect(interaction as ChannelSelectMenuInteraction); } catch (err) { console.error("ServerLogs channel select error:", err); }
         return;
       }
       await handleChannelSelectInteraction(interaction as ChannelSelectMenuInteraction);
@@ -741,6 +764,8 @@ async function handleRoleSelectInteraction(interaction: RoleSelectMenuInteractio
       await handleGeneralClearRolesSelect(interaction);
     } else if (customId === "gp_move_roles") {
       await handleGeneralMoveRolesSelect(interaction);
+    } else if (customId === "gp_move_request_roles") {
+      await handleGeneralMoveRequestRolesSelect(interaction);
     } else if (customId.startsWith("ct_")) {
       await handleCtpTagRoleSelect(interaction);
     } else if (customId === "ap_ann_role") {

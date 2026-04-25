@@ -42,10 +42,66 @@ export function registerCTPModule(client: Client) {
 
       // ── tagcd / tag cd — show remaining cooldown ──────────────────────────
       if (isTagCd) {
+        // Allow tagcd inside a configured gaming chat (lists One-Tap cooldowns)
+        const [tvCfgForChat] = await db
+          .select()
+          .from(ctpTempVoiceConfigTable)
+          .where(eq(ctpTempVoiceConfigTable.guildId, guildId))
+          .limit(1);
+
+        let chatIds: string[] = [];
+        try {
+          chatIds = tvCfgForChat?.gamingChatChannelIdsJson
+            ? JSON.parse(tvCfgForChat.gamingChatChannelIdsJson)
+            : [];
+          if (!Array.isArray(chatIds)) chatIds = [];
+        } catch {
+          chatIds = [];
+        }
+
+        if (tvCfgForChat && tvCfgForChat.enabled && chatIds.includes(message.channel.id)) {
+          const tvGames = await db
+            .select()
+            .from(ctpTempVoiceGamesTable)
+            .where(eq(ctpTempVoiceGamesTable.guildId, guildId));
+          if (!tvGames.length) {
+            const notice = await message.channel.send({
+              embeds: [new EmbedBuilder().setColor(0x5000ff).setDescription("No one-tap games configured yet.")],
+            });
+            setTimeout(() => notice.delete().catch(() => {}), 6000);
+            return;
+          }
+          const cds = await db
+            .select()
+            .from(ctpTempVoiceCooldownsTable)
+            .where(eq(ctpTempVoiceCooldownsTable.guildId, guildId));
+          const now = Date.now();
+          const lines = tvGames.map((g) => {
+            const cd = cds.find((c) => c.roleId === g.roleId);
+            const elapsed = cd ? (now - cd.lastUsedAt.getTime()) / 1000 : tvCfgForChat.cooldownSeconds;
+            const remaining = Math.max(0, Math.ceil(tvCfgForChat.cooldownSeconds - elapsed));
+            return remaining > 0
+              ? `\u23F3 **${g.gameName}** \u2014 ${formatSeconds(remaining)} left`
+              : `\u2705 **${g.gameName}** \u2014 ready`;
+          });
+          const notice = await message.channel.send({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0x5000ff)
+                .setTitle("One-Tap Cooldowns")
+                .setDescription(lines.join("\n"))
+                .setFooter({ text: `Cooldown: ${formatSeconds(tvCfgForChat.cooldownSeconds)} \u2022 Night Stars CTP` }),
+            ],
+          });
+          setTimeout(() => notice.delete().catch(() => {}), 12000);
+          message.delete().catch(() => {});
+          return;
+        }
+
         const voiceChannel = member.voice.channel;
         if (!voiceChannel || !voiceChannel.parentId) {
           const notice = await message.channel.send({
-            embeds: [new EmbedBuilder().setColor(0x5000ff).setDescription("Join a game voice channel to check the tag cooldown.")],
+            embeds: [new EmbedBuilder().setColor(0x5000ff).setDescription("Join a game voice channel (or use a gaming chat) to check the tag cooldown.")],
           });
           setTimeout(() => notice.delete().catch(() => {}), 6000);
           return;
@@ -225,13 +281,10 @@ export function registerCTPModule(client: Client) {
         return;
       }
 
-      // ── tag <gamename> in temp voice category ─────────────────────────────
+      // ── tag <gamename> in temp voice category OR a configured gaming chat ─
       if (isTempTag && tapMatch) {
         const gameInput = tapMatch[1].trim();
         if (!gameInput) return;
-
-        const voiceChannel = member.voice.channel;
-        if (!voiceChannel) return;
 
         const [tvConfig] = await db
           .select()
@@ -240,12 +293,31 @@ export function registerCTPModule(client: Client) {
           .limit(1);
 
         if (!tvConfig || !tvConfig.enabled || !tvConfig.categoryId) return;
-        if (voiceChannel.parentId !== tvConfig.categoryId) return;
+
+        // Decide context: voice-channel inside the One-Tap category, or a gaming chat
+        const voiceChannel = member.voice.channel;
+        const inOneTapVoice = !!(voiceChannel && voiceChannel.parentId === tvConfig.categoryId);
+
+        let gamingChatIds: string[] = [];
+        try {
+          gamingChatIds = tvConfig.gamingChatChannelIdsJson
+            ? JSON.parse(tvConfig.gamingChatChannelIdsJson)
+            : [];
+          if (!Array.isArray(gamingChatIds)) gamingChatIds = [];
+        } catch {
+          gamingChatIds = [];
+        }
+        const inGamingChat = gamingChatIds.includes(message.channel.id);
+
+        if (!inOneTapVoice && !inGamingChat) return;
 
         const tvGames = await db.select().from(ctpTempVoiceGamesTable).where(eq(ctpTempVoiceGamesTable.guildId, guildId));
         const tvMatch = tvGames.find((g) => g.gameName.toLowerCase() === gameInput);
 
         if (!tvMatch) {
+          // In a gaming chat, category games are NOT taggable — stay silent.
+          if (inGamingChat) return;
+
           const allCTPGames = await db
             .select()
             .from(ctpCategoriesTable)
@@ -290,7 +362,12 @@ export function registerCTPModule(client: Client) {
           }
         }
 
-        await voiceChannel.send({
+        // In a gaming chat we ping inside that chat. In a One-Tap voice we ping the voice channel chat.
+        const targetChannel = inGamingChat
+          ? (message.channel as TextChannel)
+          : (voiceChannel as unknown as TextChannel);
+
+        await targetChannel.send({
           content: `<@&${tvMatch.roleId}>`,
           embeds: [
             new EmbedBuilder()

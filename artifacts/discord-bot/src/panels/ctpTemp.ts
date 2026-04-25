@@ -25,7 +25,7 @@ import {
 import { eq, and } from "drizzle-orm";
 
 interface CtpTagState {
-  mode?: "set_category" | "add_game" | "remove_game" | null;
+  mode?: "set_category" | "add_game" | "remove_game" | "set_chats" | null;
 }
 
 export const ctpTagState = new Map<string, CtpTagState>();
@@ -55,6 +55,16 @@ function formatSeconds(total: number): string {
   return `${s}s`;
 }
 
+function parseGamingChats(cfg: { gamingChatChannelIdsJson?: string | null } | null): string[] {
+  if (!cfg?.gamingChatChannelIdsJson) return [];
+  try {
+    const arr = JSON.parse(cfg.gamingChatChannelIdsJson);
+    return Array.isArray(arr) ? arr.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 async function getConfig(guildId: string) {
   const [cfg] = await db
     .select()
@@ -74,11 +84,12 @@ async function getGames(guildId: string) {
 type Config = Awaited<ReturnType<typeof getConfig>>;
 type Games = Awaited<ReturnType<typeof getGames>>;
 
-function buildEmbed(cfg: Config, games: Games, state: CtpTagState): EmbedBuilder {
+function buildEmbed(cfg: Config, games: Games, _state: CtpTagState): EmbedBuilder {
   const enabled = !!(cfg?.enabled ?? 1);
+  const chats = parseGamingChats(cfg);
   return new EmbedBuilder()
     .setColor(0x5000ff)
-    .setTitle("🎲 CTP — Temp Voice Tags")
+    .setTitle("🎲 CTP — One-Tap Tags")
     .addFields(
       {
         name: "Category",
@@ -96,6 +107,13 @@ function buildEmbed(cfg: Config, games: Games, state: CtpTagState): EmbedBuilder
         inline: true,
       },
       {
+        name: "Gaming Chats",
+        value: chats.length
+          ? chats.map((id) => `<#${id}>`).join(", ")
+          : "_none — tag only works inside the One-Tap voices_",
+        inline: false,
+      },
+      {
         name: "Games",
         value: games.length
           ? games.map((g) => `<@&${g.roleId}> — ${g.gameName}`).join("\n")
@@ -103,11 +121,12 @@ function buildEmbed(cfg: Config, games: Games, state: CtpTagState): EmbedBuilder
         inline: false,
       }
     )
-    .setFooter({ text: "Night Stars • CTP Temp Tags" });
+    .setFooter({ text: "Night Stars • CTP One-Tap Tags" });
 }
 
 function buildComponents(cfg: Config, games: Games, state: CtpTagState) {
   const enabled = !!(cfg?.enabled ?? 1);
+  const chats = parseGamingChats(cfg);
   const rows: ActionRowBuilder<any>[] = [];
 
   rows.push(
@@ -119,6 +138,10 @@ function buildComponents(cfg: Config, games: Games, state: CtpTagState) {
       new ButtonBuilder()
         .setCustomId("ct_set_cooldown")
         .setLabel("Set Cooldown")
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId("ct_set_chats")
+        .setLabel("Gaming Chats")
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId("ct_toggle")
@@ -147,10 +170,19 @@ function buildComponents(cfg: Config, games: Games, state: CtpTagState) {
       new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
         new ChannelSelectMenuBuilder()
           .setCustomId("ct_category")
-          .setPlaceholder("Select the temp voices category")
+          .setPlaceholder("Select the One-Tap voices category")
           .setChannelTypes(ChannelType.GuildCategory)
       )
     );
+  } else if (state.mode === "set_chats") {
+    const builder = new ChannelSelectMenuBuilder()
+      .setCustomId("ct_chats")
+      .setPlaceholder("Select gaming chat channels (clear all to remove)")
+      .setChannelTypes(ChannelType.GuildText)
+      .setMinValues(0)
+      .setMaxValues(25);
+    if (chats.length) builder.setDefaultChannels(chats.slice(0, 25));
+    rows.push(new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(builder));
   } else if (state.mode === "add_game") {
     rows.push(
       new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(
@@ -206,10 +238,19 @@ export async function handleCtpTagButton(interaction: ButtonInteraction) {
     return;
   }
 
+  if (interaction.customId === "ct_set_chats") {
+    state.mode = "set_chats";
+    ctpTagState.set(userId, state);
+    const cfg = await getConfig(guildId);
+    const games = await getGames(guildId);
+    await interaction.update({ embeds: [buildEmbed(cfg, games, state)], components: buildComponents(cfg, games, state) });
+    return;
+  }
+
   if (interaction.customId === "ct_set_cooldown") {
     const modal = new ModalBuilder()
       .setCustomId("ct_cooldown_modal")
-      .setTitle("Set Temp Voice Cooldown");
+      .setTitle("Set One-Tap Cooldown");
     modal.addComponents(
       new ActionRowBuilder<TextInputBuilder>().addComponents(
         new TextInputBuilder()
@@ -271,6 +312,29 @@ export async function handleCtpTagChannelSelect(interaction: ChannelSelectMenuIn
   const guildId = interaction.guild!.id;
   const userId = interaction.user.id;
   const state = ctpTagState.get(userId) ?? {};
+
+  if (interaction.customId === "ct_chats") {
+    const ids = Array.from(new Set(interaction.values));
+    state.mode = null;
+    ctpTagState.set(userId, state);
+    const cfg = await getConfig(guildId);
+    if (cfg) {
+      await db
+        .update(ctpTempVoiceConfigTable)
+        .set({ gamingChatChannelIdsJson: JSON.stringify(ids) })
+        .where(eq(ctpTempVoiceConfigTable.guildId, guildId));
+    } else {
+      await db
+        .insert(ctpTempVoiceConfigTable)
+        .values({ guildId, cooldownSeconds: 300, enabled: 1, gamingChatChannelIdsJson: JSON.stringify(ids) });
+    }
+    const freshCfg = await getConfig(guildId);
+    const games = await getGames(guildId);
+    await interaction.update({ embeds: [buildEmbed(freshCfg, games, state)], components: buildComponents(freshCfg, games, state) });
+    return;
+  }
+
+  // Default: ct_category
   const categoryId = interaction.values[0];
   state.mode = null;
   ctpTagState.set(userId, state);

@@ -44,6 +44,7 @@ type View =
   | "config"
   | "links"
   | "spam"
+  | "longmsg"
   | "imgonly"
   | "linkonly"
   | "ignored"
@@ -190,10 +191,13 @@ function buildConfigEmbed(cfg: AutoModConfig, responseCount: number) {
 
   const spamSection =
     `${fmtBool(cfg.spamEnabled)}  ·  burst rule (5 msgs / 5 s)\n` +
-    `${fmtBool(cfg.longMsgEnabled)}  ·  long-message rule (max **300** chars)\n` +
+    `${fmtBool(cfg.longMsgEnabled)}  ·  long-message rule (max **300** chars / **5** line breaks)\n` +
     bullet("First offense", "delete") + "\n" +
     bullet("Repeat offense", "10-minute timeout") + "\n" +
-    bullet("Ignored categories", listOrNone(cfg.spamIgnoredCategoryIds, (id) => `<#${id}>`));
+    bullet("Burst — ignored categories", listOrNone(cfg.spamIgnoredCategoryIds, (id) => `<#${id}>`)) + "\n" +
+    bullet("Long-msg — ignored categories", listOrNone(cfg.longMsgIgnoredCategoryIds, (id) => `<#${id}>`)) + "\n" +
+    bullet("Long-msg — ignored channels", listOrNone(cfg.longMsgIgnoredChannelIds, (id) => `<#${id}>`)) + "\n" +
+    bullet("Long-msg — ignored roles", listOrNone(cfg.longMsgIgnoredRoleIds, (id) => `<@&${id}>`));
 
   const imgSection = cfg.imageOnlyChannelIds.length
     ? cfg.imageOnlyChannelIds.map((id) => `\u2003•  <#${id}>`).join("\n")
@@ -341,17 +345,17 @@ function buildSpamEmbed(cfg: AutoModConfig) {
     .setDescription(
       "**Two independent rules** — toggle each one separately.\n\n" +
         "▸ **Burst rule** — 5 messages within 5 seconds.\n" +
-        "▸ **Long-message rule** — single message over **300 characters**.\n\n" +
+        "▸ **Long-message rule** — single message over **300 characters** *or* **5 line breaks**.\n\n" +
         "**1st offense** → message(s) deleted.\n" +
         "**Repeat offense** → 10-minute timeout.\n\n" +
         "Admins and members with server-wide bypass roles are exempt.\n" +
-        "Both rules respect the *Ignored Categories* list below.",
+        "Use **Long-Message Settings** to manage its own ignored categories, channels, and roles.",
     )
     .addFields(
       { name: "Burst rule (5 / 5s)", value: statusBadge(cfg.spamEnabled), inline: true },
-      { name: "Long-message rule (>300 chars)", value: statusBadge(cfg.longMsgEnabled), inline: true },
+      { name: "Long-message rule (>300 chars / >5 line breaks)", value: statusBadge(cfg.longMsgEnabled), inline: true },
       {
-        name: "Ignored channel categories",
+        name: "Burst rule — ignored categories",
         value: cfg.spamIgnoredCategoryIds.length ? formatChannels(cfg.spamIgnoredCategoryIds) : "_none_",
         inline: false,
       },
@@ -368,14 +372,19 @@ function buildSpamRows(cfg: AutoModConfig) {
       .setStyle(cfg.spamEnabled ? ButtonStyle.Danger : ButtonStyle.Success),
     new ButtonBuilder()
       .setCustomId("am_longmsg_toggle")
-      .setLabel(cfg.longMsgEnabled ? "Disable 300-char Rule" : "Enable 300-char Rule")
+      .setLabel(cfg.longMsgEnabled ? "Disable Long-Msg Rule" : "Enable Long-Msg Rule")
       .setEmoji("📏")
       .setStyle(cfg.longMsgEnabled ? ButtonStyle.Danger : ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId("am_open_longmsg")
+      .setLabel("Long-Msg Settings")
+      .setEmoji("⚙️")
+      .setStyle(ButtonStyle.Secondary),
   );
   const row2 = new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
     new ChannelSelectMenuBuilder()
       .setCustomId("am_spam_cats")
-      .setPlaceholder(cfg.spamIgnoredCategoryIds.length ? "Ignored categories (replace selection)" : "Select categories to ignore…")
+      .setPlaceholder(cfg.spamIgnoredCategoryIds.length ? "Burst rule ignored categories (replace selection)" : "Burst rule — select categories to ignore…")
       .addChannelTypes(ChannelType.GuildCategory)
       .setMinValues(0)
       .setMaxValues(15),
@@ -392,6 +401,89 @@ async function renderSpam(interaction: any) {
   await replyOrUpdate(interaction, {
     embeds: [buildSpamEmbed(cfg)],
     components: buildSpamRows(cfg),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Long-Message sub-view (per-rule ignored category / channel / role)
+// ---------------------------------------------------------------------------
+
+function buildLongMsgEmbed(cfg: AutoModConfig) {
+  return new EmbedBuilder()
+    .setColor(COLOR)
+    .setTitle("📏  Long-Message Rule")
+    .setDescription(
+      "Removes any single message over **300 characters** *or* **5 line breaks**.\n\n" +
+        "**1st offense** → message deleted.\n" +
+        "**Repeat offense** → 10-minute timeout.\n\n" +
+        "Use the selectors below to add per-rule exceptions. " +
+        "These bypasses are **separate** from the global Auto-Mod bypass and from the burst-rule list.",
+    )
+    .addFields(
+      { name: "Status", value: statusBadge(cfg.longMsgEnabled), inline: true },
+      { name: "Limits", value: "`300 chars` · `5 line breaks`", inline: true },
+      {
+        name: "Ignored categories",
+        value: cfg.longMsgIgnoredCategoryIds.length ? formatChannels(cfg.longMsgIgnoredCategoryIds) : "_none_",
+        inline: false,
+      },
+      {
+        name: "Ignored channels",
+        value: cfg.longMsgIgnoredChannelIds.length ? formatChannels(cfg.longMsgIgnoredChannelIds) : "_none_",
+        inline: false,
+      },
+      {
+        name: "Ignored roles",
+        value: cfg.longMsgIgnoredRoleIds.length ? formatRoles(cfg.longMsgIgnoredRoleIds) : "_none_",
+        inline: false,
+      },
+    )
+    .setFooter({ text: "Night Stars  •  Auto-Mod  /  Long-Message" });
+}
+
+function buildLongMsgRows(cfg: AutoModConfig) {
+  const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId("am_longmsg_toggle")
+      .setLabel(cfg.longMsgEnabled ? "Disable Rule" : "Enable Rule")
+      .setEmoji("📏")
+      .setStyle(cfg.longMsgEnabled ? ButtonStyle.Danger : ButtonStyle.Success),
+  );
+  const row2 = new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
+    new ChannelSelectMenuBuilder()
+      .setCustomId("am_longmsg_cats")
+      .setPlaceholder(cfg.longMsgIgnoredCategoryIds.length ? "Ignored categories (replace selection)" : "Select ignored categories…")
+      .addChannelTypes(ChannelType.GuildCategory)
+      .setMinValues(0)
+      .setMaxValues(15),
+  );
+  const row3 = new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
+    new ChannelSelectMenuBuilder()
+      .setCustomId("am_longmsg_channels")
+      .setPlaceholder(cfg.longMsgIgnoredChannelIds.length ? "Ignored channels (replace selection)" : "Select ignored channels…")
+      .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.PublicThread, ChannelType.PrivateThread)
+      .setMinValues(0)
+      .setMaxValues(20),
+  );
+  const row4 = new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(
+    new RoleSelectMenuBuilder()
+      .setCustomId("am_longmsg_roles")
+      .setPlaceholder(cfg.longMsgIgnoredRoleIds.length ? "Ignored roles (replace selection)" : "Select ignored roles…")
+      .setMinValues(0)
+      .setMaxValues(15),
+  );
+  const row5 = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId("am_open_spam").setLabel("← Back to Anti-Spam").setStyle(ButtonStyle.Secondary),
+  );
+  return [row1, row2, row3, row4, row5];
+}
+
+async function renderLongMsg(interaction: any) {
+  const cfg = await getAutoModConfig(interaction.guild!.id);
+  setState(interaction.user.id, { view: "longmsg" });
+  await replyOrUpdate(interaction, {
+    embeds: [buildLongMsgEmbed(cfg)],
+    components: buildLongMsgRows(cfg),
   });
 }
 
@@ -942,6 +1034,7 @@ export async function handleAutoModButton(interaction: ButtonInteraction) {
   if (id === "am_open_root") return renderRoot(interaction);
   if (id === "am_open_links") return renderLinks(interaction);
   if (id === "am_open_spam") return renderSpam(interaction);
+  if (id === "am_open_longmsg") return renderLongMsg(interaction);
   if (id === "am_open_imgonly") return renderImgOnly(interaction);
   if (id === "am_open_linkonly") return renderLinkOnly(interaction);
   if (id === "am_open_ignored") return renderIgnored(interaction);
@@ -969,7 +1062,9 @@ export async function handleAutoModButton(interaction: ButtonInteraction) {
     const cfg = await getAutoModConfig(guildId);
     await setAutoModField(guildId, "longMsgEnabled", !cfg.longMsgEnabled);
     invalidateAutoModCache(guildId);
-    return renderSpam(interaction);
+    return getState(interaction.user.id).view === "longmsg"
+      ? renderLongMsg(interaction)
+      : renderSpam(interaction);
   }
 
   // Links
@@ -1033,6 +1128,11 @@ export async function handleAutoModRoleSelect(interaction: RoleSelectMenuInterac
     invalidateAutoModCache(guildId);
     return renderIgnored(interaction);
   }
+  if (id === "am_longmsg_roles") {
+    await setAutoModField(guildId, "longMsgIgnoredRoleIds", values);
+    invalidateAutoModCache(guildId);
+    return renderLongMsg(interaction);
+  }
   if (id.startsWith("am_resp_roles_")) {
     const rid = Number(id.slice("am_resp_roles_".length));
     await updateAutoResponse(rid, { enabledRoleIds: values });
@@ -1050,6 +1150,16 @@ export async function handleAutoModChannelSelect(interaction: ChannelSelectMenuI
     await setAutoModField(guildId, "spamIgnoredCategoryIds", values);
     invalidateAutoModCache(guildId);
     return renderSpam(interaction);
+  }
+  if (id === "am_longmsg_cats") {
+    await setAutoModField(guildId, "longMsgIgnoredCategoryIds", values);
+    invalidateAutoModCache(guildId);
+    return renderLongMsg(interaction);
+  }
+  if (id === "am_longmsg_channels") {
+    await setAutoModField(guildId, "longMsgIgnoredChannelIds", values);
+    invalidateAutoModCache(guildId);
+    return renderLongMsg(interaction);
   }
   if (id === "am_imgonly_add") {
     const cfg = await getAutoModConfig(guildId);

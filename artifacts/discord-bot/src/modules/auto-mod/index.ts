@@ -26,8 +26,11 @@ export type AutoModConfig = {
   // Anti-Spam (5 msg / 5s burst)
   spamEnabled: boolean;
   spamIgnoredCategoryIds: string[];
-  // Long-message rule (>300 chars in a single message)
+  // Long-message rule (>300 chars OR >5 line breaks in a single message)
   longMsgEnabled: boolean;
+  longMsgIgnoredCategoryIds: string[];
+  longMsgIgnoredChannelIds: string[];
+  longMsgIgnoredRoleIds: string[];
   // Channel modes
   imageOnlyChannelIds: string[];
   linkOnlyChannelIds: string[];
@@ -102,11 +105,17 @@ export async function ensureAutoModSchema(): Promise<void> {
       link_only_channel_ids_json text not null default '[]',
       logs_channel_id text,
       long_msg_enabled boolean not null default false,
+      long_msg_ignored_category_ids_json text not null default '[]',
+      long_msg_ignored_channel_ids_json text not null default '[]',
+      long_msg_ignored_role_ids_json text not null default '[]',
       seeded boolean not null default false,
       updated_at timestamp default now() not null
     );
     alter table auto_mod_config add column if not exists logs_channel_id text;
     alter table auto_mod_config add column if not exists long_msg_enabled boolean not null default false;
+    alter table auto_mod_config add column if not exists long_msg_ignored_category_ids_json text not null default '[]';
+    alter table auto_mod_config add column if not exists long_msg_ignored_channel_ids_json text not null default '[]';
+    alter table auto_mod_config add column if not exists long_msg_ignored_role_ids_json text not null default '[]';
     create table if not exists auto_mod_responses (
       id serial primary key,
       guild_id text not null,
@@ -187,6 +196,9 @@ export async function getAutoModConfig(guildId: string): Promise<AutoModConfig> 
     spamEnabled: !!row.spam_enabled,
     spamIgnoredCategoryIds: parseJsonArray(row.spam_ignored_category_ids_json),
     longMsgEnabled: !!row.long_msg_enabled,
+    longMsgIgnoredCategoryIds: parseJsonArray(row.long_msg_ignored_category_ids_json),
+    longMsgIgnoredChannelIds: parseJsonArray(row.long_msg_ignored_channel_ids_json),
+    longMsgIgnoredRoleIds: parseJsonArray(row.long_msg_ignored_role_ids_json),
     imageOnlyChannelIds: parseJsonArray(row.image_only_channel_ids_json),
     linkOnlyChannelIds: parseJsonArray(row.link_only_channel_ids_json),
     logsChannelId: row.logs_channel_id ?? null,
@@ -204,6 +216,9 @@ export async function setAutoModField<K extends keyof AutoModConfig>(
     linksWhitelist: "links_whitelist_json",
     linksIgnoredRoleIds: "links_ignored_role_ids_json",
     spamIgnoredCategoryIds: "spam_ignored_category_ids_json",
+    longMsgIgnoredCategoryIds: "long_msg_ignored_category_ids_json",
+    longMsgIgnoredChannelIds: "long_msg_ignored_channel_ids_json",
+    longMsgIgnoredRoleIds: "long_msg_ignored_role_ids_json",
     imageOnlyChannelIds: "image_only_channel_ids_json",
     linkOnlyChannelIds: "link_only_channel_ids_json",
     linksEnabled: "links_enabled",
@@ -423,7 +438,7 @@ type ModAction =
   | { kind: "imageOnly" }
   | { kind: "linkOnly" }
   | { kind: "spam"; count: number }
-  | { kind: "longMessage"; chars: number }
+  | { kind: "longMessage"; chars: number; lineBreaks: number; reason: "chars" | "lineBreaks" }
   | { kind: "timeout"; durationMin: number; reason: string }
   | { kind: "response"; trigger: string; responseId: number };
 
@@ -493,7 +508,11 @@ async function logModAction(
     fields.push({ name: "Messages removed", value: `${action.count}`, inline: true });
   } else if (action.kind === "longMessage") {
     fields.push({ name: "Length", value: `${action.chars} chars`, inline: true });
-    fields.push({ name: "Limit", value: `${LONG_MSG_THRESHOLD} chars`, inline: true });
+    fields.push({ name: "Line breaks", value: `${action.lineBreaks}`, inline: true });
+    const limit = action.reason === "lineBreaks"
+      ? `> ${LINE_BREAK_THRESHOLD} line breaks`
+      : `> ${LONG_MSG_THRESHOLD} chars`;
+    fields.push({ name: "Triggered by", value: limit, inline: true });
   } else if (action.kind === "timeout") {
     fields.push(
       { name: "Duration", value: `${action.durationMin} min`, inline: true },
@@ -535,6 +554,7 @@ const TIMEOUT_MS = 10 * 60_000;
 
 // Long-message rule
 const LONG_MSG_THRESHOLD = 300;
+const LINE_BREAK_THRESHOLD = 5;
 const LONG_MSG_RESET_MS = 30 * 60_000; // forgive after 30 quiet minutes
 
 const spamRecords = new Map<string, SpamRecord>();
@@ -818,39 +838,49 @@ async function handleMessage(message: Message): Promise<void> {
     }
   }
 
-  // --- Long-message rule (>300 chars) --------------------------------------
+  // --- Long-message rule (>300 chars or >5 line breaks) --------------------
   if (!deleted && !admin && !globallyIgnored && config.longMsgEnabled) {
     const parentId = (message.channel as any).parentId ?? null;
-    const ignored = parentId && config.spamIgnoredCategoryIds.includes(parentId);
+    const channelIgnored = config.longMsgIgnoredChannelIds.includes(message.channelId);
+    const categoryIgnored = parentId && config.longMsgIgnoredCategoryIds.includes(parentId);
+    const roleIgnored = memberHasAny(member, config.longMsgIgnoredRoleIds);
+    const ignored = channelIgnored || categoryIgnored || roleIgnored;
     if (!ignored) {
-      const len = (message.content ?? "").length;
-      if (len > LONG_MSG_THRESHOLD) {
-        const chars = len;
+      const content = message.content ?? "";
+      const len = content.length;
+      const lineBreaks = (content.match(/\n/g) ?? []).length;
+      const overChars = len > LONG_MSG_THRESHOLD;
+      const overLines = lineBreaks > LINE_BREAK_THRESHOLD;
+      if (overChars || overLines) {
+        const reason: "chars" | "lineBreaks" = overChars ? "chars" : "lineBreaks";
+        const limitText = reason === "chars"
+          ? `${LONG_MSG_THRESHOLD} characters`
+          : `${LINE_BREAK_THRESHOLD} line breaks`;
         await safeDelete(message);
         const lrec = trackLongMsg(message.guildId!, message.author.id);
-        void logModAction(message, config, { kind: "longMessage", chars });
+        void logModAction(message, config, { kind: "longMessage", chars: len, lineBreaks, reason });
         if (lrec.warnCount >= 2 && member) {
           try {
-            await member.timeout(TIMEOUT_MS, `Auto-Mod: long message (>${LONG_MSG_THRESHOLD} chars, repeat offense)`);
+            await member.timeout(TIMEOUT_MS, `Auto-Mod: long message (>${limitText}, repeat offense)`);
             await sendTransientWarning(
               message,
-              `you have been timed out for 10 minutes for repeatedly sending messages over ${LONG_MSG_THRESHOLD} characters.`,
+              `you have been timed out for 10 minutes for repeatedly sending messages over ${limitText}.`,
             );
             void logModAction(message, config, {
               kind: "timeout",
               durationMin: TIMEOUT_MS / 60_000,
-              reason: `Long message repeat offense (>${LONG_MSG_THRESHOLD} chars)`,
+              reason: `Long message repeat offense (>${limitText})`,
             });
           } catch {
             await sendTransientWarning(
               message,
-              `your message exceeded ${LONG_MSG_THRESHOLD} characters and was removed. Please keep it shorter.`,
+              `your message exceeded ${limitText} and was removed. Please keep it shorter.`,
             );
           }
         } else {
           await sendTransientWarning(
             message,
-            `your message exceeded ${LONG_MSG_THRESHOLD} characters and was removed. Please keep it shorter — next time you will be timed out for 10 minutes.`,
+            `your message exceeded ${limitText} and was removed. Please keep it shorter — next time you will be timed out for 10 minutes.`,
           );
         }
         deleted = true;

@@ -21,6 +21,7 @@ interface GeneralPanelState {
   eventHosterRoleId?: string;
   clearRoleIds: string[];
   moveRoleIds: string[];
+  moveRequestRoleIds: string[];
   page: 1 | 2;
 }
 
@@ -32,6 +33,7 @@ function emptyState(): GeneralPanelState {
     staffRoleIds: [],
     clearRoleIds: [],
     moveRoleIds: [],
+    moveRequestRoleIds: [],
     page: 1,
   };
 }
@@ -69,6 +71,9 @@ function buildPage2Embed(state: GeneralPanelState) {
   const moveList = state.moveRoleIds.length
     ? state.moveRoleIds.map(id => `<@&${id}>`).join(", ")
     : "none (Admins only)";
+  const moveReqList = state.moveRequestRoleIds.length
+    ? state.moveRequestRoleIds.map(id => `<@&${id}>`).join(", ")
+    : "none";
 
   return new EmbedBuilder()
     .setColor(0x5000ff)
@@ -76,9 +81,12 @@ function buildPage2Embed(state: GeneralPanelState) {
     .setDescription(
       `**Clear Role** \u2014 ${clearList}\n` +
       "\u2514 Members with these roles can use `mse7 <1-99>` to clear messages\n\n" +
-      `**Move Role** \u2014 ${moveList}\n` +
-      "\u2514 Members with these roles can use `aji @user` to move members\n\n" +
-      "Admins can always use both commands. Click **Save** to apply all changes."
+      `**Instant Move Role** \u2014 ${moveList}\n` +
+      "\u2514 `aji @user` moves the member **immediately** (no confirmation)\n\n" +
+      `**Move-Request Role** \u2014 ${moveReqList}\n` +
+      "\u2514 `aji @user` sends an Accept / Reject prompt to the target\n\n" +
+      "Admins can always use the instant move. Couples can also move each\n" +
+      "other through the request flow. Click **Save** to apply changes."
     )
     .setFooter({ text: "Night Stars \u2022 General Setup" });
 }
@@ -90,7 +98,8 @@ function hasAnyChange(state: GeneralPanelState): boolean {
     state.staffRoleIds.length ||
     state.eventHosterRoleId ||
     state.clearRoleIds.length ||
-    state.moveRoleIds.length
+    state.moveRoleIds.length ||
+    state.moveRequestRoleIds.length
   );
 }
 
@@ -181,14 +190,26 @@ function buildPage2Components(state: GeneralPanelState) {
       .setCustomId("gp_move_roles")
       .setPlaceholder(
         state.moveRoleIds.length
-          ? `\u2705 ${state.moveRoleIds.length} Move Role(s) selected`
-          : "Select Move Role (can use aji)\u2026"
+          ? `\u2705 ${state.moveRoleIds.length} Instant Move Role(s) selected`
+          : "Select Instant Move Role (no confirmation)\u2026"
       )
       .setMinValues(0)
       .setMaxValues(10)
   );
 
-  const row3 = new ActionRowBuilder<ButtonBuilder>().addComponents(
+  const row3 = new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(
+    new RoleSelectMenuBuilder()
+      .setCustomId("gp_move_request_roles")
+      .setPlaceholder(
+        state.moveRequestRoleIds.length
+          ? `\u2705 ${state.moveRequestRoleIds.length} Move-Request Role(s) selected`
+          : "Select Move-Request Role (asks the target)\u2026"
+      )
+      .setMinValues(0)
+      .setMaxValues(10)
+  );
+
+  const row4 = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId("gp_back")
       .setLabel("\u25C0 Back")
@@ -204,7 +225,7 @@ function buildPage2Components(state: GeneralPanelState) {
       .setStyle(ButtonStyle.Danger),
   );
 
-  return [row1, row2, row3];
+  return [row1, row2, row3, row4];
 }
 
 function renderPanel(state: GeneralPanelState) {
@@ -225,15 +246,20 @@ function parseJsonArray(raw: string | null | undefined): string[] {
   return [];
 }
 
-async function loadExtraRoles(guildId: string): Promise<{ clear: string[]; move: string[] }> {
-  const result = await pool.query<{ clear_role_ids_json: string | null; move_role_ids_json: string | null }>(
-    "select clear_role_ids_json, move_role_ids_json from bot_config where guild_id = $1 limit 1",
+async function loadExtraRoles(guildId: string): Promise<{ clear: string[]; move: string[]; moveReq: string[] }> {
+  const result = await pool.query<{
+    clear_role_ids_json: string | null;
+    move_role_ids_json: string | null;
+    move_request_role_ids_json: string | null;
+  }>(
+    "select clear_role_ids_json, move_role_ids_json, move_request_role_ids_json from bot_config where guild_id = $1 limit 1",
     [guildId],
   );
   const row = result.rows[0];
   return {
     clear: parseJsonArray(row?.clear_role_ids_json),
     move: parseJsonArray(row?.move_role_ids_json),
+    moveReq: parseJsonArray(row?.move_request_role_ids_json),
   };
 }
 
@@ -266,6 +292,7 @@ export async function openGeneralSetupPanel(interaction: ButtonInteraction) {
     eventHosterRoleId: row?.eventHosterRoleId ?? undefined,
     clearRoleIds: extra.clear,
     moveRoleIds: extra.move,
+    moveRequestRoleIds: extra.moveReq,
     page: 1,
   };
   generalPanelState.set(userId, state);
@@ -323,6 +350,12 @@ export async function handleGeneralMoveRolesSelect(interaction: RoleSelectMenuIn
   await interaction.update(renderPanel(state));
 }
 
+export async function handleGeneralMoveRequestRolesSelect(interaction: RoleSelectMenuInteraction) {
+  const state = getOrInitState(interaction.user.id);
+  state.moveRequestRoleIds = [...new Set(interaction.values)];
+  await interaction.update(renderPanel(state));
+}
+
 export async function handleGeneralPanelNext(interaction: ButtonInteraction) {
   const state = getOrInitState(interaction.user.id);
   state.page = 2;
@@ -361,13 +394,19 @@ export async function handleGeneralPanelSave(interaction: ButtonInteraction) {
 
   // Clear & Move role lists live in raw columns not in the drizzle schema.
   await pool.query(
-    `insert into bot_config (guild_id, clear_role_ids_json, move_role_ids_json, updated_at)
-     values ($1, $2, $3, now())
+    `insert into bot_config (guild_id, clear_role_ids_json, move_role_ids_json, move_request_role_ids_json, updated_at)
+     values ($1, $2, $3, $4, now())
      on conflict (guild_id) do update set
        clear_role_ids_json = excluded.clear_role_ids_json,
        move_role_ids_json = excluded.move_role_ids_json,
+       move_request_role_ids_json = excluded.move_request_role_ids_json,
        updated_at = now()`,
-    [guildId, JSON.stringify(state.clearRoleIds), JSON.stringify(state.moveRoleIds)],
+    [
+      guildId,
+      JSON.stringify(state.clearRoleIds),
+      JSON.stringify(state.moveRoleIds),
+      JSON.stringify(state.moveRequestRoleIds),
+    ],
   );
 
   generalPanelState.delete(userId);
@@ -387,6 +426,9 @@ export async function handleGeneralPanelSave(interaction: ButtonInteraction) {
   const moveList = state.moveRoleIds.length
     ? state.moveRoleIds.map(id => `<@&${id}>`).join(", ")
     : "none (Admins only)";
+  const moveReqList = state.moveRequestRoleIds.length
+    ? state.moveRequestRoleIds.map(id => `<@&${id}>`).join(", ")
+    : "none";
 
   await interaction.update({
     embeds: [
@@ -399,7 +441,8 @@ export async function handleGeneralPanelSave(interaction: ButtonInteraction) {
           `**Event Hoster Role** \u2014 ${state.eventHosterRoleId ? `<@&${state.eventHosterRoleId}>` : "not set"}\n` +
           `**Blocked Channels** \u2014 ${blockedList}\n` +
           `**Clear Role (mse7)** \u2014 ${clearList}\n` +
-          `**Move Role (aji)** \u2014 ${moveList}`
+          `**Instant Move Role (aji)** \u2014 ${moveList}\n` +
+          `**Move-Request Role (aji)** \u2014 ${moveReqList}`
         )
         .setFooter({ text: "Night Stars \u2022 General Setup" }),
     ],

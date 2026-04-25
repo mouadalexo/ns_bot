@@ -6,6 +6,7 @@ export const ctpTempVoiceConfigTable = pgTable("ctp_temp_voice_config", {
   categoryId: text("category_id"),
   cooldownSeconds: integer("cooldown_seconds").notNull().default(300),
   enabled: integer("enabled").notNull().default(1),
+  gamingChatChannelIdsJson: text("gaming_chat_channel_ids_json").default("[]"),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 

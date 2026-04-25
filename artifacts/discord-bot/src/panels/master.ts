@@ -14,6 +14,7 @@ import { openGeneralSetupPanel } from "./general.js";
 import { openWelcomePanel } from "./welcome.js";
 import { openAnnPanel } from "./ann.js";
 import { openAutoModPanel } from "./automod.js";
+import { openServerLogsPanel } from "./server-logs.js";
 import { buildAllCommandsEmbed, getGuildPrefixes } from "./index.js";
 
 const BRAND_COLOR = 0x5000ff;
@@ -43,12 +44,15 @@ export function buildMasterSetupRows(): ActionRowBuilder<ButtonBuilder>[] {
   );
   const row3 = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId("ms_autodelete").setStyle(ButtonStyle.Primary).setLabel("Auto-Mod").setEmoji("\uD83D\uDEE1\uFE0F"),
+    new ButtonBuilder().setCustomId("ms_logs").setStyle(ButtonStyle.Primary).setLabel("Logs").setEmoji("\uD83D\uDCDC"),
     new ButtonBuilder().setCustomId("ms_stagelock").setStyle(ButtonStyle.Secondary).setLabel("Stage Lock").setEmoji("\uD83C\uDFA4"),
     new ButtonBuilder().setCustomId("ms_prefix").setStyle(ButtonStyle.Secondary).setLabel("Prefixes").setEmoji("\uD83D\uDD24"),
     new ButtonBuilder().setCustomId("ms_help").setStyle(ButtonStyle.Success).setLabel("Help").setEmoji("\u2753"),
+  );
+  const row4 = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId("ms_close").setStyle(ButtonStyle.Danger).setLabel("Close").setEmoji("\u2716\uFE0F"),
   );
-  return [row1, row2, row3];
+  return [row1, row2, row3, row4];
 }
 
 export async function sendMasterSetupPanel(message: Message): Promise<void> {
@@ -190,6 +194,9 @@ export async function handleMasterSetupButton(interaction: ButtonInteraction): P
       return;
     case "ms_autodelete":
       await openAutoModPanel(interaction);
+      return;
+    case "ms_logs":
+      await openServerLogsPanel(interaction);
       return;
     case "ms_stagelock":
       await infoReply(

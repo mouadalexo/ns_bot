@@ -17,6 +17,7 @@ import { registerRoleGiverModule } from "./modules/role-giver/index.js";
 import { registerAvatarModule } from "./modules/avatar/index.js";
 import { registerAutoDeleteModule } from "./modules/auto-delete/index.js";
 import { registerAutoModModule } from "./modules/auto-mod/index.js";
+import { ensureServerLogsSchema, registerServerLogsModule } from "./modules/server-logs/index.js";
 import { registerStageLockModule } from "./modules/stage-lock/index.js";
 import { registerMoveModule } from "./modules/move/index.js";
 import { registerClearModule } from "./modules/clear/index.js";
@@ -36,8 +37,14 @@ async function ensureRuntimeSchema(): Promise<void> {
     alter table bot_config add column if not exists jail_hammer_role_ids_json text;
     alter table bot_config add column if not exists jail_logs_channel_id text;
     alter table bot_config add column if not exists move_role_ids_json text;
+    alter table bot_config add column if not exists move_request_role_ids_json text;
     alter table bot_config add column if not exists clear_role_ids_json text;
     alter table bot_config add column if not exists welcome_config_json text;
+  `);
+
+  await pool.query(`
+    alter table ctp_temp_voice_config
+      add column if not exists gaming_chat_channel_ids_json text default '[]';
   `);
 
   await pool.query(`
@@ -207,6 +214,7 @@ async function startBot(token: string): Promise<void> {
 
   await ensureRuntimeSchema();
   await ensureSocialSchema();
+  await ensureServerLogsSchema();
 
   const client = new Client({
     intents: [
@@ -215,6 +223,7 @@ async function startBot(token: string): Promise<void> {
       GatewayIntentBits.GuildMessages,
       GatewayIntentBits.MessageContent,
       GatewayIntentBits.GuildVoiceStates,
+      GatewayIntentBits.GuildModeration,
       GatewayIntentBits.DirectMessages,
     ],
     partials: [
@@ -288,6 +297,7 @@ async function startBot(token: string): Promise<void> {
     registerAvatarModule(client);
     registerAutoDeleteModule(client).catch((err) => console.error("[Bot] AutoDelete init error:", err));
     registerAutoModModule(client).catch((err) => console.error("[Bot] AutoMod init error:", err));
+    registerServerLogsModule(client);
     registerStageLockModule(client);
     registerMoveModule(client);
     registerClearModule(client);
