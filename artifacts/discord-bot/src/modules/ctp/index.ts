@@ -26,11 +26,11 @@ export function registerCTPModule(client: Client) {
       if (!isMainGuild(message.guild.id)) return;
 
       const content = message.content.toLowerCase().trim();
-      // CTP category: exactly "tag" (no prefix, nothing else with it)
-      const isCTPTag = content === "tag";
       // Cooldown check: exactly "tagcd" or "tag cd"
-      const isTagCd = !isCTPTag && (content === "tagcd" || content === "tag cd");
-      // One Tap (temp voice): "tag <gamename>" — must be exactly two tokens, no extras
+      const isTagCd = content === "tagcd" || content === "tag cd";
+      // CTP category: exactly "tag" OR "tag <multi-word message>" (has a space in the tail)
+      const isCTPTag = !isTagCd && (content === "tag" || /^tag\s+\S+\s+[\s\S]+$/.test(content));
+      // One Tap (temp voice): "tag <single-word-gamename> [optional message]"
       const tapMatch = !isCTPTag && !isTagCd ? content.match(/^tag\s+(\S+)(?:\s+([\s\S]+))?$/) : null;
       const isTempTag = !!tapMatch;
 
@@ -256,9 +256,13 @@ export function registerCTPModule(client: Client) {
           }
         }
 
-        const pingMessage = config.pingMessage ?? "Looking for players!";
+        const ctpRawMsg = message.content.trim().match(/^tag\s+([\s\S]+)$/i);
+        const ctpInlineMsg = ctpRawMsg?.[1]?.trim() ?? null;
+        const ctpContent = ctpInlineMsg
+          ? `**${member.displayName}** — ${ctpInlineMsg} <@&${config.gameRoleId}>`
+          : `**${member.displayName}** <@&${config.gameRoleId}>`;
         await voiceChannel.send({
-          content: `**${member.displayName}** — ${pingMessage} <@&${config.gameRoleId}>`,
+          content: ctpContent,
           allowedMentions: { roles: [config.gameRoleId] },
         });
 

@@ -59,9 +59,9 @@ const MEMBER_CATEGORIES: CategoryDef[] = [
     label: "Call to Play Commands",
     emoji: "\uD83C\uDFAE",
     buildCommands: () => [
-      { syntax: "tag", desc: "Ping the game role for your current voice category" },
-      { syntax: "tag <gamename> [message]", desc: "One-tap ping — optionally add a custom message (e.g. tag valorant lets play!)" },
-      { syntax: "tagcd", desc: "Show the remaining tag cooldown for your category" },
+      { syntax: "tag [message]", desc: "Ping your game role — optionally add a message (e.g. tag lets play!)" },
+      { syntax: "tag <gamename> [message]", desc: "One-tap ping in a gaming chat or temp-voice category" },
+      { syntax: "tagcd", desc: "Show the remaining tag cooldown for your category / game" },
     ],
   },
   {
@@ -94,6 +94,7 @@ const STAFF_CATEGORIES: CategoryDef[] = [
       { syntax: "/welcome setup", desc: "Configure the Welcome system" },
       { syntax: "/setup-move", desc: "Set roles allowed to use aji @user" },
       { syntax: "/setup-clear", desc: "Set roles allowed to use mse7 N" },
+      { syntax: "/logs", desc: "Configure server event logging channels" },
       { syntax: "/general setup", desc: "Staff role, blocked channels, event hosters" },
       { syntax: "/role-giver setup", desc: "Open the Role Giver setup panel" },
       { syntax: "/prefix", desc: "View and change the bot prefix" },

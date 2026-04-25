@@ -25,7 +25,6 @@ interface CtpPanelState {
   gameRoleId?: string;
   gameName?: string;
   cooldownSeconds?: number;
-  pingMessage?: string;
 }
 
 interface CtpManageState {
@@ -123,7 +122,6 @@ function buildManageEmbed(games: Awaited<ReturnType<typeof getGuildGames>>, sele
           `**Role** — <@&${selected.gameRoleId}>`,
           `**Category** — <#${selected.categoryId}>`,
           `**Cooldown** — ${formatSeconds(selected.cooldownSeconds)}`,
-          `**Ping Message** — ${selected.pingMessage ?? "_default_"}`,
         ].join("\n")
       )
       .setFooter({ text: `${games.length} game(s) configured • Night Stars CTP` });
@@ -414,7 +412,6 @@ export async function handleCtpPanelSelect(
       state.gameName = ex.gameName;
       state.gameRoleId = ex.gameRoleId;
       state.cooldownSeconds = ex.cooldownSeconds;
-      state.pingMessage = ex.pingMessage ?? undefined;
     }
   } else if (interaction.customId === "cp_game_role") {
     state.gameRoleId = (interaction as RoleSelectMenuInteraction).values[0];
@@ -458,16 +455,7 @@ export async function openCtpDetailsModal(interaction: ButtonInteraction) {
         .setMaxLength(10)
         .setValue(currentCooldown)
     ),
-    new ActionRowBuilder<TextInputBuilder>().addComponents(
-      new TextInputBuilder()
-        .setCustomId("cp_ping_msg")
-        .setLabel("Ping Message (optional)")
-        .setPlaceholder("Leave empty to use default: Looking for players!")
-        .setStyle(TextInputStyle.Paragraph)
-        .setRequired(false)
-        .setMaxLength(200)
-        .setValue(state.pingMessage ?? "")
-    )
+
   );
 
   await interaction.showModal(modal);
@@ -480,9 +468,6 @@ export async function handleCtpDetailsModalSubmit(interaction: ModalSubmitIntera
   state.gameName = interaction.fields.getTextInputValue("cp_game_name").trim();
   const cooldownRaw = interaction.fields.getTextInputValue("cp_cooldown").trim();
   state.cooldownSeconds = cooldownRaw ? parseCooldown(cooldownRaw) : 600;
-  const pingMsg = interaction.fields.getTextInputValue("cp_ping_msg").trim();
-  state.pingMessage = pingMsg || undefined;
-
   ctpPanelState.set(userId, state);
 
   await interaction.update({
@@ -517,7 +502,7 @@ export async function handleCtpPanelSave(interaction: ButtonInteraction) {
       gameName: state.gameName,
       gameRoleId: state.gameRoleId,
       cooldownSeconds,
-      pingMessage: state.pingMessage ?? null,
+      pingMessage: null,
       enabled: 1,
     }).where(and(eq(ctpCategoriesTable.guildId, guildId), eq(ctpCategoriesTable.categoryId, state.categoryId)));
   } else {
@@ -527,7 +512,7 @@ export async function handleCtpPanelSave(interaction: ButtonInteraction) {
       gameName: state.gameName,
       gameRoleId: state.gameRoleId,
       cooldownSeconds,
-      pingMessage: state.pingMessage ?? null,
+      pingMessage: null,
     });
   }
 

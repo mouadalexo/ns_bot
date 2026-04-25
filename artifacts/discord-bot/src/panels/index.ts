@@ -100,6 +100,7 @@ import {
   handleAutoModModal,
 } from "./automod.js";
 import {
+  openServerLogsPanel,
   handleServerLogsButton,
   handleServerLogsChannelSelect,
 } from "./server-logs.js";
