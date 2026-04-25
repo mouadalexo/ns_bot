@@ -23,9 +23,11 @@ export type AutoModConfig = {
   linksEnabled: boolean;
   linksWhitelist: string[];
   linksIgnoredRoleIds: string[];
-  // Anti-Spam
+  // Anti-Spam (5 msg / 5s burst)
   spamEnabled: boolean;
   spamIgnoredCategoryIds: string[];
+  // Long-message rule (>300 chars in a single message)
+  longMsgEnabled: boolean;
   // Channel modes
   imageOnlyChannelIds: string[];
   linkOnlyChannelIds: string[];
@@ -99,10 +101,12 @@ export async function ensureAutoModSchema(): Promise<void> {
       image_only_channel_ids_json text not null default '[]',
       link_only_channel_ids_json text not null default '[]',
       logs_channel_id text,
+      long_msg_enabled boolean not null default false,
       seeded boolean not null default false,
       updated_at timestamp default now() not null
     );
     alter table auto_mod_config add column if not exists logs_channel_id text;
+    alter table auto_mod_config add column if not exists long_msg_enabled boolean not null default false;
     create table if not exists auto_mod_responses (
       id serial primary key,
       guild_id text not null,
@@ -182,6 +186,7 @@ export async function getAutoModConfig(guildId: string): Promise<AutoModConfig> 
     linksIgnoredRoleIds: parseJsonArray(row.links_ignored_role_ids_json),
     spamEnabled: !!row.spam_enabled,
     spamIgnoredCategoryIds: parseJsonArray(row.spam_ignored_category_ids_json),
+    longMsgEnabled: !!row.long_msg_enabled,
     imageOnlyChannelIds: parseJsonArray(row.image_only_channel_ids_json),
     linkOnlyChannelIds: parseJsonArray(row.link_only_channel_ids_json),
     logsChannelId: row.logs_channel_id ?? null,
@@ -203,6 +208,7 @@ export async function setAutoModField<K extends keyof AutoModConfig>(
     linkOnlyChannelIds: "link_only_channel_ids_json",
     linksEnabled: "links_enabled",
     spamEnabled: "spam_enabled",
+    longMsgEnabled: "long_msg_enabled",
     logsChannelId: "logs_channel_id",
   };
   const col = map[field as string];
@@ -417,6 +423,7 @@ type ModAction =
   | { kind: "imageOnly" }
   | { kind: "linkOnly" }
   | { kind: "spam"; count: number }
+  | { kind: "longMessage"; chars: number }
   | { kind: "timeout"; durationMin: number; reason: string }
   | { kind: "response"; trigger: string; responseId: number };
 
@@ -426,6 +433,7 @@ function actionTitle(a: ModAction): string {
     case "imageOnly": return "🖼️ Image-only channel — message removed";
     case "linkOnly": return "🔗 Link-only channel — message removed";
     case "spam": return "⚡ Spam burst removed";
+    case "longMessage": return "📏 Long message removed";
     case "timeout": return "⏱️ Timeout applied";
     case "response": return "💬 Auto-response triggered";
   }
@@ -437,6 +445,7 @@ function actionColor(a: ModAction): number {
     case "imageOnly": return LOG_COLORS.imageOnly;
     case "linkOnly": return LOG_COLORS.linkOnly;
     case "spam": return LOG_COLORS.spam;
+    case "longMessage": return LOG_COLORS.spam;
     case "timeout": return LOG_COLORS.timeout;
     case "response": return LOG_COLORS.response;
   }
@@ -482,6 +491,9 @@ async function logModAction(
     fields.push({ name: "Blocked URL", value: `\`${snippet(action.url, 200)}\``, inline: false });
   } else if (action.kind === "spam") {
     fields.push({ name: "Messages removed", value: `${action.count}`, inline: true });
+  } else if (action.kind === "longMessage") {
+    fields.push({ name: "Length", value: `${action.chars} chars`, inline: true });
+    fields.push({ name: "Limit", value: `${LONG_MSG_THRESHOLD} chars`, inline: true });
   } else if (action.kind === "timeout") {
     fields.push(
       { name: "Duration", value: `${action.durationMin} min`, inline: true },
@@ -521,9 +533,27 @@ const SPAM_THRESHOLD = 5;
 const SPAM_RESET_MS = 5 * 60_000;
 const TIMEOUT_MS = 10 * 60_000;
 
+// Long-message rule
+const LONG_MSG_THRESHOLD = 300;
+const LONG_MSG_RESET_MS = 30 * 60_000; // forgive after 30 quiet minutes
+
 const spamRecords = new Map<string, SpamRecord>();
 // also track recent message ids per user so we can delete the burst
 const recentMessages = new Map<string, { id: string; channelId: string; ts: number }[]>();
+
+type LongMsgRecord = { warnCount: number; warnedAt: number };
+const longMsgRecords = new Map<string, LongMsgRecord>();
+
+function trackLongMsg(guildId: string, userId: string): LongMsgRecord {
+  const key = `${guildId}:${userId}`;
+  const now = Date.now();
+  const rec = longMsgRecords.get(key) ?? { warnCount: 0, warnedAt: 0 };
+  if (rec.warnedAt && now - rec.warnedAt > LONG_MSG_RESET_MS) rec.warnCount = 0;
+  rec.warnCount += 1;
+  rec.warnedAt = now;
+  longMsgRecords.set(key, rec);
+  return rec;
+}
 
 function spamKey(guildId: string, userId: string): string {
   return `${guildId}:${userId}`;
@@ -781,6 +811,46 @@ async function handleMessage(message: Message): Promise<void> {
           await sendTransientWarning(
             message,
             "spam detected — your messages were removed. Please slow down.",
+          );
+        }
+        deleted = true;
+      }
+    }
+  }
+
+  // --- Long-message rule (>300 chars) --------------------------------------
+  if (!deleted && !admin && !globallyIgnored && config.longMsgEnabled) {
+    const parentId = (message.channel as any).parentId ?? null;
+    const ignored = parentId && config.spamIgnoredCategoryIds.includes(parentId);
+    if (!ignored) {
+      const len = (message.content ?? "").length;
+      if (len > LONG_MSG_THRESHOLD) {
+        const chars = len;
+        await safeDelete(message);
+        const lrec = trackLongMsg(message.guildId!, message.author.id);
+        void logModAction(message, config, { kind: "longMessage", chars });
+        if (lrec.warnCount >= 2 && member) {
+          try {
+            await member.timeout(TIMEOUT_MS, `Auto-Mod: long message (>${LONG_MSG_THRESHOLD} chars, repeat offense)`);
+            await sendTransientWarning(
+              message,
+              `you have been timed out for 10 minutes for repeatedly sending messages over ${LONG_MSG_THRESHOLD} characters.`,
+            );
+            void logModAction(message, config, {
+              kind: "timeout",
+              durationMin: TIMEOUT_MS / 60_000,
+              reason: `Long message repeat offense (>${LONG_MSG_THRESHOLD} chars)`,
+            });
+          } catch {
+            await sendTransientWarning(
+              message,
+              `your message exceeded ${LONG_MSG_THRESHOLD} characters and was removed. Please keep it shorter.`,
+            );
+          }
+        } else {
+          await sendTransientWarning(
+            message,
+            `your message exceeded ${LONG_MSG_THRESHOLD} characters and was removed. Please keep it shorter — next time you will be timed out for 10 minutes.`,
           );
         }
         deleted = true;

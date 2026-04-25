@@ -41,6 +41,7 @@ const SUCCESS = 0x00c851;
 
 type View =
   | "root"
+  | "config"
   | "links"
   | "spam"
   | "imgonly"
@@ -100,58 +101,36 @@ function trimList(items: string[], max = 12): string {
 // Root view
 // ---------------------------------------------------------------------------
 
-function buildRootEmbed(cfg: AutoModConfig, responseCount: number) {
+function buildRootEmbed() {
   return new EmbedBuilder()
     .setColor(COLOR)
-    .setTitle("🛡️ Auto-Mod — Server Configuration")
+    .setTitle("🛡️  Auto-Mod  ·  Setup")
     .setDescription(
-      "One panel for every automated moderation feature. Pick a section below to configure it. " +
-        "All changes are saved instantly.",
+      "**Welcome to the Auto-Mod control panel.**\n" +
+        "Pick a section below to **set things up**. Every change is saved instantly.\n\n" +
+        "▸ Tap **View Configuration** at the bottom whenever you want to see the current settings.",
     )
     .addFields(
       {
-        name: "🔗 Anti-Link",
+        name: "▸ Protection",
         value:
-          `${statusBadge(cfg.linksEnabled)}\n` +
-          `**Whitelist:** ${cfg.linksWhitelist.length} entr${cfg.linksWhitelist.length === 1 ? "y" : "ies"}\n` +
-          `**Bypass roles:** ${cfg.linksIgnoredRoleIds.length ? formatRoles(cfg.linksIgnoredRoleIds) : "_none_"}`,
+          "🔗  **Anti-Link**  —  block links not on the whitelist\n" +
+          "⚡  **Anti-Spam**  —  burst rule + 300-char rule\n" +
+          "🖼️  **Image-Only**  —  enforce images in channels\n" +
+          "🔗  **Link-Only**  —  enforce links in channels",
         inline: false,
       },
       {
-        name: "⚡ Anti-Spam",
+        name: "▸ Customisation",
         value:
-          `${statusBadge(cfg.spamEnabled)} — 5 messages / 5 seconds\n` +
-          `**1st offense:** delete burst\n**Repeat:** 10-minute timeout\n` +
-          `**Ignored categories:** ${cfg.spamIgnoredCategoryIds.length ? formatChannels(cfg.spamIgnoredCategoryIds) : "_none_"}`,
-        inline: false,
-      },
-      {
-        name: "🖼️ Image-Only Channels",
-        value: cfg.imageOnlyChannelIds.length ? formatChannels(cfg.imageOnlyChannelIds) : "_none configured_",
-        inline: false,
-      },
-      {
-        name: "🔗 Link-Only Channels",
-        value: cfg.linkOnlyChannelIds.length ? formatChannels(cfg.linkOnlyChannelIds) : "_none configured_",
-        inline: false,
-      },
-      {
-        name: "💬 Auto-Responses",
-        value: `${responseCount} configured`,
-        inline: true,
-      },
-      {
-        name: "🛡️ Server-Wide Bypass Roles",
-        value: cfg.ignoredRoleIds.length ? formatRoles(cfg.ignoredRoleIds) : "_none_",
-        inline: false,
-      },
-      {
-        name: "📋 Logs Channel",
-        value: cfg.logsChannelId ? `<#${cfg.logsChannelId}>` : "_not set — moderation actions are not logged_",
+          "💬  **Auto-Responses**  —  trigger phrases & replies\n" +
+          "🧹  **Auto-Delete**  —  word-block & per-channel rules\n" +
+          "🛡️  **Bypass Roles**  —  exempt staff from auto-mod\n" +
+          "📋  **Logs**  —  record every action to a channel",
         inline: false,
       },
     )
-    .setFooter({ text: "Night Stars • Auto-Mod" });
+    .setFooter({ text: "Night Stars  •  Auto-Mod  •  Setup" });
 }
 
 function buildRootRows(): ActionRowBuilder<ButtonBuilder>[] {
@@ -167,18 +146,128 @@ function buildRootRows(): ActionRowBuilder<ButtonBuilder>[] {
     new ButtonBuilder().setCustomId("am_open_ignored").setLabel("Bypass Roles").setEmoji("🛡️").setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId("am_open_logs").setLabel("Logs").setEmoji("📋").setStyle(ButtonStyle.Secondary),
   );
-  return [row1, row2];
+  const row3 = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId("am_open_config").setLabel("View Configuration").setEmoji("📖").setStyle(ButtonStyle.Success),
+  );
+  return [row1, row2, row3];
 }
 
 async function renderRoot(interaction: any) {
-  const guildId = interaction.guild!.id;
-  const [cfg, responses] = await Promise.all([getAutoModConfig(guildId), listAutoResponses(guildId)]);
   setState(interaction.user.id, { view: "root" });
   const payload = {
-    embeds: [buildRootEmbed(cfg, responses.length)],
+    embeds: [buildRootEmbed()],
     components: buildRootRows(),
   };
   await replyOrUpdate(interaction, payload);
+}
+
+// ---------------------------------------------------------------------------
+// Configuration view (read-only, prettified)
+// ---------------------------------------------------------------------------
+
+const DIVIDER = "━━━━━━━━━━━━━━━━━━━━━━━━━━━";
+
+function fmtBool(b: boolean): string {
+  return b ? "🟢  **Enabled**" : "⚪  *Disabled*";
+}
+
+function bullet(label: string, value: string): string {
+  return `\u2003•  **${label}** \u2003·\u2003 ${value}`;
+}
+
+function listOrNone(items: string[], formatter: (id: string) => string, max = 10): string {
+  if (items.length === 0) return "_— none —_";
+  const shown = items.slice(0, max).map(formatter).join(", ");
+  const extra = items.length > max ? `,  *+${items.length - max} more*` : "";
+  return shown + extra;
+}
+
+function buildConfigEmbed(cfg: AutoModConfig, responseCount: number) {
+  const linkSection =
+    `${fmtBool(cfg.linksEnabled)}\n` +
+    bullet("Whitelist", `\`${cfg.linksWhitelist.length}\` domain${cfg.linksWhitelist.length === 1 ? "" : "s"}`) + "\n" +
+    bullet("Bypass roles", listOrNone(cfg.linksIgnoredRoleIds, (id) => `<@&${id}>`));
+
+  const spamSection =
+    `${fmtBool(cfg.spamEnabled)}  ·  burst rule (5 msgs / 5 s)\n` +
+    `${fmtBool(cfg.longMsgEnabled)}  ·  long-message rule (max **300** chars)\n` +
+    bullet("First offense", "delete") + "\n" +
+    bullet("Repeat offense", "10-minute timeout") + "\n" +
+    bullet("Ignored categories", listOrNone(cfg.spamIgnoredCategoryIds, (id) => `<#${id}>`));
+
+  const imgSection = cfg.imageOnlyChannelIds.length
+    ? cfg.imageOnlyChannelIds.map((id) => `\u2003•  <#${id}>`).join("\n")
+    : "_— none configured —_";
+
+  const linkOnlySection = cfg.linkOnlyChannelIds.length
+    ? cfg.linkOnlyChannelIds.map((id) => `\u2003•  <#${id}>`).join("\n")
+    : "_— none configured —_";
+
+  const bypassSection = cfg.ignoredRoleIds.length
+    ? cfg.ignoredRoleIds.map((id) => `\u2003•  <@&${id}>`).join("\n")
+    : "_— none —_";
+
+  const logsLine = cfg.logsChannelId
+    ? `<#${cfg.logsChannelId}>`
+    : "_— not set, moderation actions are **not** being recorded —_";
+
+  return new EmbedBuilder()
+    .setColor(COLOR)
+    .setTitle("📖  Auto-Mod  ·  Current Configuration")
+    .setDescription(
+      `${DIVIDER}\n` +
+        `**A snapshot of every Auto-Mod setting on this server.**\n` +
+        `Use the buttons on the setup panel to make changes.\n` +
+        `${DIVIDER}`,
+    )
+    .addFields(
+      { name: "🔗  ANTI-LINK", value: linkSection, inline: false },
+      { name: "\u200b", value: DIVIDER, inline: false },
+      { name: "⚡  ANTI-SPAM", value: spamSection, inline: false },
+      { name: "\u200b", value: DIVIDER, inline: false },
+      {
+        name: `🖼️  IMAGE-ONLY CHANNELS  ·  ${cfg.imageOnlyChannelIds.length}`,
+        value: imgSection,
+        inline: false,
+      },
+      {
+        name: `🔗  LINK-ONLY CHANNELS  ·  ${cfg.linkOnlyChannelIds.length}`,
+        value: linkOnlySection,
+        inline: false,
+      },
+      { name: "\u200b", value: DIVIDER, inline: false },
+      {
+        name: `💬  AUTO-RESPONSES  ·  ${responseCount}`,
+        value:
+          responseCount === 0
+            ? "_— none configured —_"
+            : `\`${responseCount}\` trigger${responseCount === 1 ? "" : "s"} configured.  Open the **Auto-Responses** section for details.`,
+        inline: false,
+      },
+      { name: "\u200b", value: DIVIDER, inline: false },
+      { name: "🛡️  SERVER-WIDE BYPASS ROLES", value: bypassSection, inline: false },
+      { name: "📋  LOGS CHANNEL", value: logsLine, inline: false },
+    )
+    .setFooter({ text: "Night Stars  •  Auto-Mod  •  Configuration snapshot" });
+}
+
+function buildConfigRows(): ActionRowBuilder<ButtonBuilder>[] {
+  return [
+    new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId("am_open_root").setLabel("← Back to Setup").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId("am_open_config").setLabel("Refresh").setEmoji("🔄").setStyle(ButtonStyle.Primary),
+    ),
+  ];
+}
+
+async function renderConfig(interaction: any) {
+  const guildId = interaction.guild!.id;
+  const [cfg, responses] = await Promise.all([getAutoModConfig(guildId), listAutoResponses(guildId)]);
+  setState(interaction.user.id, { view: "config" });
+  await replyOrUpdate(interaction, {
+    embeds: [buildConfigEmbed(cfg, responses.length)],
+    components: buildConfigRows(),
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -248,35 +337,45 @@ async function renderLinks(interaction: any) {
 function buildSpamEmbed(cfg: AutoModConfig) {
   return new EmbedBuilder()
     .setColor(COLOR)
-    .setTitle("⚡ Anti-Spam")
+    .setTitle("⚡  Anti-Spam")
     .setDescription(
-      "Detects 5 messages within 5 seconds.\n" +
-        "**First offense:** the whole burst is deleted.\n" +
-        "**Next offense (within 5 minutes):** member is timed out for 10 minutes.\n\n" +
-        "Admins and members with server-wide bypass roles are exempt.",
+      "**Two independent rules** — toggle each one separately.\n\n" +
+        "▸ **Burst rule** — 5 messages within 5 seconds.\n" +
+        "▸ **Long-message rule** — single message over **300 characters**.\n\n" +
+        "**1st offense** → message(s) deleted.\n" +
+        "**Repeat offense** → 10-minute timeout.\n\n" +
+        "Admins and members with server-wide bypass roles are exempt.\n" +
+        "Both rules respect the *Ignored Categories* list below.",
     )
     .addFields(
-      { name: "Status", value: statusBadge(cfg.spamEnabled), inline: true },
+      { name: "Burst rule (5 / 5s)", value: statusBadge(cfg.spamEnabled), inline: true },
+      { name: "Long-message rule (>300 chars)", value: statusBadge(cfg.longMsgEnabled), inline: true },
       {
         name: "Ignored channel categories",
         value: cfg.spamIgnoredCategoryIds.length ? formatChannels(cfg.spamIgnoredCategoryIds) : "_none_",
         inline: false,
       },
     )
-    .setFooter({ text: "Night Stars • Auto-Mod / Anti-Spam" });
+    .setFooter({ text: "Night Stars  •  Auto-Mod  /  Anti-Spam" });
 }
 
 function buildSpamRows(cfg: AutoModConfig) {
   const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId("am_spam_toggle")
-      .setLabel(cfg.spamEnabled ? "Disable" : "Enable")
+      .setLabel(cfg.spamEnabled ? "Disable Burst Rule" : "Enable Burst Rule")
+      .setEmoji("⚡")
       .setStyle(cfg.spamEnabled ? ButtonStyle.Danger : ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId("am_longmsg_toggle")
+      .setLabel(cfg.longMsgEnabled ? "Disable 300-char Rule" : "Enable 300-char Rule")
+      .setEmoji("📏")
+      .setStyle(cfg.longMsgEnabled ? ButtonStyle.Danger : ButtonStyle.Success),
   );
   const row2 = new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
     new ChannelSelectMenuBuilder()
       .setCustomId("am_spam_cats")
-      .setPlaceholder(cfg.spamIgnoredCategoryIds.length ? "Ignored categories (set)" : "Select categories to ignore…")
+      .setPlaceholder(cfg.spamIgnoredCategoryIds.length ? "Ignored categories (replace selection)" : "Select categories to ignore…")
       .addChannelTypes(ChannelType.GuildCategory)
       .setMinValues(0)
       .setMaxValues(15),
@@ -300,43 +399,82 @@ async function renderSpam(interaction: any) {
 // Image-Only view
 // ---------------------------------------------------------------------------
 
-function buildImgOnlyEmbed(cfg: AutoModConfig) {
+function buildImgOnlyEmbed(cfg: AutoModConfig, interaction: any) {
+  const lines = cfg.imageOnlyChannelIds.length
+    ? cfg.imageOnlyChannelIds
+        .map((id, i) => {
+          const name = interaction.guild?.channels.cache.get(id)?.name;
+          return `\`${String(i + 1).padStart(2, " ")}.\`  <#${id}>${name ? `  *(#${name})*` : ""}`;
+        })
+        .join("\n")
+    : "_— none configured yet —_";
+
   return new EmbedBuilder()
     .setColor(COLOR)
-    .setTitle("🖼️ Image-Only Channels")
+    .setTitle("🖼️  Image-Only Channels")
     .setDescription(
-      "In these channels every message must contain an image attachment or an embedded image. " +
-        "Plain-text messages are deleted with a private warning.",
+      "In these channels every message must contain an **image attachment** or an **embedded image**. " +
+        "Plain-text messages are deleted with a private warning.\n\n" +
+        "▸ Use **Add a channel** to add channels **one at a time** — the existing list is preserved.\n" +
+        "▸ Use **Remove a channel** to take a single channel off the list.\n" +
+        "▸ Use **Clear all** to wipe the entire list.",
     )
     .addFields({
-      name: "Channels",
-      value: cfg.imageOnlyChannelIds.length ? formatChannels(cfg.imageOnlyChannelIds) : "_none_",
+      name: `Active channels  ·  ${cfg.imageOnlyChannelIds.length}`,
+      value: lines,
       inline: false,
     })
-    .setFooter({ text: "Night Stars • Auto-Mod / Image-Only" });
+    .setFooter({ text: "Night Stars  •  Auto-Mod  /  Image-Only" });
 }
 
-function buildImgOnlyRows(cfg: AutoModConfig) {
-  const row1 = new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
-    new ChannelSelectMenuBuilder()
-      .setCustomId("am_imgonly_chs")
-      .setPlaceholder(cfg.imageOnlyChannelIds.length ? "Image-only channels (set)" : "Select channels…")
-      .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
-      .setMinValues(0)
-      .setMaxValues(20),
+function buildImgOnlyRows(cfg: AutoModConfig, interaction: any) {
+  const rows: ActionRowBuilder<any>[] = [];
+
+  rows.push(
+    new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
+      new ChannelSelectMenuBuilder()
+        .setCustomId("am_imgonly_add")
+        .setPlaceholder("➕  Add a channel (search by name)…")
+        .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+        .setMinValues(1)
+        .setMaxValues(1),
+    ),
   );
-  const row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(
+
+  if (cfg.imageOnlyChannelIds.length > 0) {
+    const opts = cfg.imageOnlyChannelIds.slice(0, 25).map((id) => {
+      const name = interaction.guild?.channels.cache.get(id)?.name ?? id;
+      return { label: `#${name}`.slice(0, 100), value: id, description: id };
+    });
+    rows.push(
+      new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId("am_imgonly_remove")
+          .setPlaceholder("➖  Remove a channel from the list…")
+          .addOptions(opts),
+      ),
+    );
+  }
+
+  const buttons = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId("am_open_root").setLabel("← Back").setStyle(ButtonStyle.Secondary),
   );
-  return [row1, row2];
+  if (cfg.imageOnlyChannelIds.length > 0) {
+    buttons.addComponents(
+      new ButtonBuilder().setCustomId("am_imgonly_clear").setLabel("Clear all").setEmoji("🗑️").setStyle(ButtonStyle.Danger),
+    );
+  }
+  rows.push(buttons);
+
+  return rows;
 }
 
 async function renderImgOnly(interaction: any) {
   const cfg = await getAutoModConfig(interaction.guild!.id);
   setState(interaction.user.id, { view: "imgonly" });
   await replyOrUpdate(interaction, {
-    embeds: [buildImgOnlyEmbed(cfg)],
-    components: buildImgOnlyRows(cfg),
+    embeds: [buildImgOnlyEmbed(cfg, interaction)],
+    components: buildImgOnlyRows(cfg, interaction),
   });
 }
 
@@ -344,43 +482,82 @@ async function renderImgOnly(interaction: any) {
 // Link-Only view
 // ---------------------------------------------------------------------------
 
-function buildLinkOnlyEmbed(cfg: AutoModConfig) {
+function buildLinkOnlyEmbed(cfg: AutoModConfig, interaction: any) {
+  const lines = cfg.linkOnlyChannelIds.length
+    ? cfg.linkOnlyChannelIds
+        .map((id, i) => {
+          const name = interaction.guild?.channels.cache.get(id)?.name;
+          return `\`${String(i + 1).padStart(2, " ")}.\`  <#${id}>${name ? `  *(#${name})*` : ""}`;
+        })
+        .join("\n")
+    : "_— none configured yet —_";
+
   return new EmbedBuilder()
     .setColor(COLOR)
-    .setTitle("🔗 Link-Only Channels")
+    .setTitle("🔗  Link-Only Channels")
     .setDescription(
-      "In these channels every message must contain at least one link. " +
-        "Plain-text messages are deleted with a private warning.",
+      "In these channels every message must contain **at least one link**. " +
+        "Plain-text messages are deleted with a private warning.\n\n" +
+        "▸ Use **Add a channel** to add channels **one at a time** — the existing list is preserved.\n" +
+        "▸ Use **Remove a channel** to take a single channel off the list.\n" +
+        "▸ Use **Clear all** to wipe the entire list.",
     )
     .addFields({
-      name: "Channels",
-      value: cfg.linkOnlyChannelIds.length ? formatChannels(cfg.linkOnlyChannelIds) : "_none_",
+      name: `Active channels  ·  ${cfg.linkOnlyChannelIds.length}`,
+      value: lines,
       inline: false,
     })
-    .setFooter({ text: "Night Stars • Auto-Mod / Link-Only" });
+    .setFooter({ text: "Night Stars  •  Auto-Mod  /  Link-Only" });
 }
 
-function buildLinkOnlyRows(cfg: AutoModConfig) {
-  const row1 = new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
-    new ChannelSelectMenuBuilder()
-      .setCustomId("am_linkonly_chs")
-      .setPlaceholder(cfg.linkOnlyChannelIds.length ? "Link-only channels (set)" : "Select channels…")
-      .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
-      .setMinValues(0)
-      .setMaxValues(20),
+function buildLinkOnlyRows(cfg: AutoModConfig, interaction: any) {
+  const rows: ActionRowBuilder<any>[] = [];
+
+  rows.push(
+    new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
+      new ChannelSelectMenuBuilder()
+        .setCustomId("am_linkonly_add")
+        .setPlaceholder("➕  Add a channel (search by name)…")
+        .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+        .setMinValues(1)
+        .setMaxValues(1),
+    ),
   );
-  const row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(
+
+  if (cfg.linkOnlyChannelIds.length > 0) {
+    const opts = cfg.linkOnlyChannelIds.slice(0, 25).map((id) => {
+      const name = interaction.guild?.channels.cache.get(id)?.name ?? id;
+      return { label: `#${name}`.slice(0, 100), value: id, description: id };
+    });
+    rows.push(
+      new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId("am_linkonly_remove")
+          .setPlaceholder("➖  Remove a channel from the list…")
+          .addOptions(opts),
+      ),
+    );
+  }
+
+  const buttons = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId("am_open_root").setLabel("← Back").setStyle(ButtonStyle.Secondary),
   );
-  return [row1, row2];
+  if (cfg.linkOnlyChannelIds.length > 0) {
+    buttons.addComponents(
+      new ButtonBuilder().setCustomId("am_linkonly_clear").setLabel("Clear all").setEmoji("🗑️").setStyle(ButtonStyle.Danger),
+    );
+  }
+  rows.push(buttons);
+
+  return rows;
 }
 
 async function renderLinkOnly(interaction: any) {
   const cfg = await getAutoModConfig(interaction.guild!.id);
   setState(interaction.user.id, { view: "linkonly" });
   await replyOrUpdate(interaction, {
-    embeds: [buildLinkOnlyEmbed(cfg)],
-    components: buildLinkOnlyRows(cfg),
+    embeds: [buildLinkOnlyEmbed(cfg, interaction)],
+    components: buildLinkOnlyRows(cfg, interaction),
   });
 }
 
@@ -771,11 +948,28 @@ export async function handleAutoModButton(interaction: ButtonInteraction) {
   if (id === "am_open_responses") return renderResponses(interaction);
   if (id === "am_open_autodelete") return renderAutoDelete(interaction);
   if (id === "am_open_logs") return renderLogs(interaction);
+  if (id === "am_open_config") return renderConfig(interaction);
   if (id === "am_back_root") return renderRoot(interaction);
   if (id === "am_logs_clear") {
     await setAutoModField(guildId, "logsChannelId", null as any);
     invalidateAutoModCache(guildId);
     return renderLogs(interaction);
+  }
+  if (id === "am_imgonly_clear") {
+    await setAutoModField(guildId, "imageOnlyChannelIds", []);
+    invalidateAutoModCache(guildId);
+    return renderImgOnly(interaction);
+  }
+  if (id === "am_linkonly_clear") {
+    await setAutoModField(guildId, "linkOnlyChannelIds", []);
+    invalidateAutoModCache(guildId);
+    return renderLinkOnly(interaction);
+  }
+  if (id === "am_longmsg_toggle") {
+    const cfg = await getAutoModConfig(guildId);
+    await setAutoModField(guildId, "longMsgEnabled", !cfg.longMsgEnabled);
+    invalidateAutoModCache(guildId);
+    return renderSpam(interaction);
   }
 
   // Links
@@ -857,13 +1051,17 @@ export async function handleAutoModChannelSelect(interaction: ChannelSelectMenuI
     invalidateAutoModCache(guildId);
     return renderSpam(interaction);
   }
-  if (id === "am_imgonly_chs") {
-    await setAutoModField(guildId, "imageOnlyChannelIds", values);
+  if (id === "am_imgonly_add") {
+    const cfg = await getAutoModConfig(guildId);
+    const merged = Array.from(new Set([...cfg.imageOnlyChannelIds, ...values]));
+    await setAutoModField(guildId, "imageOnlyChannelIds", merged);
     invalidateAutoModCache(guildId);
     return renderImgOnly(interaction);
   }
-  if (id === "am_linkonly_chs") {
-    await setAutoModField(guildId, "linkOnlyChannelIds", values);
+  if (id === "am_linkonly_add") {
+    const cfg = await getAutoModConfig(guildId);
+    const merged = Array.from(new Set([...cfg.linkOnlyChannelIds, ...values]));
+    await setAutoModField(guildId, "linkOnlyChannelIds", merged);
     invalidateAutoModCache(guildId);
     return renderLinkOnly(interaction);
   }
@@ -894,6 +1092,22 @@ export async function handleAutoModStringSelect(interaction: StringSelectMenuInt
     await updateAutoResponse(rid, { matchType: v });
     invalidateAutoModCache(guildId);
     return renderResponseEdit(interaction, rid);
+  }
+  if (id === "am_imgonly_remove") {
+    const cfg = await getAutoModConfig(guildId);
+    const removed = new Set(interaction.values);
+    const next = cfg.imageOnlyChannelIds.filter((c) => !removed.has(c));
+    await setAutoModField(guildId, "imageOnlyChannelIds", next);
+    invalidateAutoModCache(guildId);
+    return renderImgOnly(interaction);
+  }
+  if (id === "am_linkonly_remove") {
+    const cfg = await getAutoModConfig(guildId);
+    const removed = new Set(interaction.values);
+    const next = cfg.linkOnlyChannelIds.filter((c) => !removed.has(c));
+    await setAutoModField(guildId, "linkOnlyChannelIds", next);
+    invalidateAutoModCache(guildId);
+    return renderLinkOnly(interaction);
   }
 }
 
