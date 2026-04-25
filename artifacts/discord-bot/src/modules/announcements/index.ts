@@ -142,6 +142,63 @@ interface AnnSetupState {
   filled: boolean;
   panelInteraction?: ButtonInteraction;
   lastActivity?: number;
+  savedThisSession?: boolean;   // true after user clicks 💾 Save in this session
+  hasSavedTemplate?: boolean;   // true if a saved template exists in DB for this guild+mode
+}
+
+interface SavedAnnTemplate {
+  title?: string;
+  description?: string;
+  additional?: string;
+  modalImageUrl?: string;
+  tagOn?: boolean;
+}
+
+async function loadSavedTemplate(
+  guildId: string,
+  mode: "ann" | "event",
+): Promise<SavedAnnTemplate | null> {
+  const [cfg] = await db
+    .select({
+      savedAnnTemplate: botConfigTable.savedAnnTemplate,
+      savedEventTemplate: botConfigTable.savedEventTemplate,
+    })
+    .from(botConfigTable)
+    .where(eq(botConfigTable.guildId, guildId))
+    .limit(1);
+  const raw = mode === "event" ? cfg?.savedEventTemplate : cfg?.savedAnnTemplate;
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as SavedAnnTemplate;
+  } catch {
+    return null;
+  }
+}
+
+async function persistSavedTemplate(
+  guildId: string,
+  mode: "ann" | "event",
+  template: SavedAnnTemplate | null,
+): Promise<void> {
+  const value = template ? JSON.stringify(template) : null;
+  const updateData =
+    mode === "event"
+      ? { savedEventTemplate: value, updatedAt: new Date() }
+      : { savedAnnTemplate: value, updatedAt: new Date() };
+  const insertData =
+    mode === "event"
+      ? { guildId, savedEventTemplate: value }
+      : { guildId, savedAnnTemplate: value };
+  const existing = await db
+    .select({ id: botConfigTable.id })
+    .from(botConfigTable)
+    .where(eq(botConfigTable.guildId, guildId))
+    .limit(1);
+  if (existing.length) {
+    await db.update(botConfigTable).set(updateData).where(eq(botConfigTable.guildId, guildId));
+  } else {
+    await db.insert(botConfigTable).values(insertData);
+  }
 }
 
 const annSetupState = new Map<string, AnnSetupState>();
@@ -181,8 +238,18 @@ function buildSetupPanelEmbed(state: AnnSetupState): EmbedBuilder {
       lines.push(`**Additional:** ${add}`);
     }
     if (state.modalImageUrl) lines.push("**Image:** set \u2705");
-    lines.push("", "-# Click **Send** to post.");
+    if (state.savedThisSession) {
+      lines.push("", "\uD83D\uDCBE **Saved as template** \u2014 will auto-load next time. Click **Clear** to start fresh.");
+    } else {
+      lines.push("", "-# Click **Send** to post, or \uD83D\uDCBE **Save** to reuse it later.");
+    }
     embed.setDescription(lines.join("\n"));
+  } else if (state.hasSavedTemplate) {
+    embed.setDescription(
+      "Fill in the details, then click **Send**.\n" +
+      "-# A saved template exists \u2014 click \uD83D\uDCC2 **Load Saved** to prefill it.\n\n" +
+      "-# Only you can use this panel."
+    );
   } else {
     embed.setDescription(
       "Fill in the details, then click **Send**.\n\n" +
@@ -233,15 +300,39 @@ function buildSetupPanelComponents(state: AnnSetupState): ActionRowBuilder<Butto
     new ActionRowBuilder<ButtonBuilder>().addComponents(...row1Buttons),
   ];
 
+  const row2Buttons: ButtonBuilder[] = [];
   if (state.filled) {
-    rows.push(
-      new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`an_preview:${uid}`)
-          .setLabel("👁️ Preview")
-          .setStyle(ButtonStyle.Secondary),
-      )
+    row2Buttons.push(
+      new ButtonBuilder()
+        .setCustomId(`an_preview:${uid}`)
+        .setLabel("\uD83D\uDC41\uFE0F Preview")
+        .setStyle(ButtonStyle.Secondary),
     );
+    if (state.savedThisSession) {
+      row2Buttons.push(
+        new ButtonBuilder()
+          .setCustomId(`an_save:${uid}`)
+          .setLabel("\uD83D\uDDD1\uFE0F Clear")
+          .setStyle(ButtonStyle.Danger),
+      );
+    } else {
+      row2Buttons.push(
+        new ButtonBuilder()
+          .setCustomId(`an_save:${uid}`)
+          .setLabel("\uD83D\uDCBE Save")
+          .setStyle(ButtonStyle.Primary),
+      );
+    }
+  } else if (state.hasSavedTemplate) {
+    row2Buttons.push(
+      new ButtonBuilder()
+        .setCustomId(`an_load:${uid}`)
+        .setLabel("\uD83D\uDCC2 Load Saved")
+        .setStyle(ButtonStyle.Primary),
+    );
+  }
+  if (row2Buttons.length) {
+    rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(...row2Buttons));
   }
 
   return rows;
@@ -265,6 +356,8 @@ function isAnnouncementCustomId(customId: string): boolean {
     customId.startsWith("an_tc_color_add:")   ||
     customId.startsWith("an_tc_color_back:")  ||
     customId.startsWith("an_preview:")        ||
+    customId.startsWith("an_save:")           ||
+    customId.startsWith("an_load:")           ||
     customId.startsWith("an_modal:")          ||
     customId.startsWith("an_tc_cmodal:")
   );
@@ -389,17 +482,26 @@ async function openAnnSetupInChannel(message: Message, mode: "ann" | "event"): P
   }
 
   const attachmentImageUrl = message.attachments.first()?.url;
+
+  // Auto-load saved template if one exists for this guild + mode.
+  const saved = await loadSavedTemplate(message.guild!.id, mode).catch(() => null);
+  const hasSavedTemplate = !!saved;
+
   const state: AnnSetupState = {
     userId: message.author.id,
     guildId: message.guild!.id,
     channelId: message.channelId,
     panelChannelId: message.channelId,
-    title: "", description: "", additional: "", modalImageUrl: "",
-    tagOn: true,
+    title: saved?.title ?? "",
+    description: saved?.description ?? "",
+    additional: saved?.additional ?? "",
+    modalImageUrl: saved?.modalImageUrl ?? "",
+    tagOn: saved?.tagOn ?? true,
     mode,
     lockedToEvent: mode === "event",
-    filled: false,
+    filled: !!saved?.description,
     attachmentImageUrl,
+    hasSavedTemplate,
   };
 
   await message.delete().catch(() => {});
@@ -597,8 +699,10 @@ export function registerAnnouncementsModule(client: Client): void {
         cid.startsWith("an_tc_color_title:") ||
         cid.startsWith("an_tc_color_desc:")  ||
         cid.startsWith("an_tc_color_add:")   ||
-        cid.startsWith("an_tc_color_back:") ||
-        cid.startsWith("an_preview:")
+        cid.startsWith("an_tc_color_back:")  ||
+        cid.startsWith("an_preview:")        ||
+        cid.startsWith("an_save:")           ||
+        cid.startsWith("an_load:")
       ) {
         await handleAnnButton(interaction as ButtonInteraction, client);
         return;
@@ -635,16 +739,25 @@ async function handleAnnButton(interaction: ButtonInteraction, client: Client): 
   }
   touchState(state);
 
-  // Open: reply ephemerally, store interaction for later updates
+  // Open: post the setup panel as a normal channel message (NOT ephemeral) so
+  // it doesn't expire after 15 minutes — staff need plenty of time to write
+  // long announcements. Ownership is enforced on every button click.
   if (customId.startsWith("an_open:")) {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferUpdate().catch(() => {});
     await deleteSetupLauncher(interaction, client, state);
-    await interaction.editReply({
+    const channel = await client.channels
+      .fetch(state.panelChannelId)
+      .catch(() => null) as TextChannel | null;
+    if (!channel) return;
+    const panel = await channel.send({
       embeds: [buildSetupPanelEmbed(state)],
       components: buildSetupPanelComponents(state),
-    });
-    state.panelInteraction = interaction;
-    annSetupState.set(ownerId, state);
+    }).catch(() => null);
+    if (panel) {
+      state.panelMessageId = panel.id;
+    }
+    delete state.panelInteraction;
+    touchState(state);
     return;
   }
 
@@ -769,7 +882,7 @@ async function handleAnnButton(interaction: ButtonInteraction, client: Client): 
     const isEvent = state.mode === "event";
     const titleColor: ColorResolvable = isEvent ? colors.eventTitleColor : colors.annTitleColor;
     const descColor:  ColorResolvable = isEvent ? colors.eventDescColor  : colors.annDescColor;
-    const addColor:   ColorResolvable = isEvent ? colors.eventColor      : colors.annAddColor;
+    const addColor:   ColorResolvable = isEvent ? colors.eventAddColor   : colors.annAddColor;
 
     const titleResolved = state.title      ? await resolveEmojiCodes(await resolveTags(state.title, guild), guild)      : "";
     const descResolved  =                    await resolveEmojiCodes(await resolveTags(state.description, guild), guild);
@@ -798,6 +911,84 @@ async function handleAnnButton(interaction: ButtonInteraction, client: Client): 
     return;
   }
 
+  // Save / Clear toggle
+  // - First click (state filled, not yet saved): persist current panel as a
+  //   reusable template for this guild + mode and mark the panel as Saved.
+  // - Second click (already Saved this session): clear the panel back to empty
+  //   so the user can start a fresh announcement.
+  if (customId.startsWith("an_save:")) {
+    if (state.savedThisSession) {
+      // Clear the panel state.
+      state.title = "";
+      state.description = "";
+      state.additional = "";
+      state.modalImageUrl = "";
+      state.tagOn = true;
+      state.filled = false;
+      state.savedThisSession = false;
+      // Re-check if a saved template still exists (it does, unless the user
+      // wants to also wipe it — keep persistence so they can Load it again).
+      const stillSaved = await loadSavedTemplate(state.guildId, state.mode).catch(() => null);
+      state.hasSavedTemplate = !!stillSaved;
+      touchState(state);
+      await interaction.update({
+        embeds: [buildSetupPanelEmbed(state)],
+        components: buildSetupPanelComponents(state),
+      });
+      return;
+    }
+    if (!state.filled) {
+      await interaction.reply({
+        content: "\u274C Fill in the details first before saving.",
+        ephemeral: true,
+      });
+      return;
+    }
+    await persistSavedTemplate(state.guildId, state.mode, {
+      title: state.title,
+      description: state.description,
+      additional: state.additional,
+      modalImageUrl: state.modalImageUrl,
+      tagOn: state.tagOn,
+    }).catch(() => {});
+    state.savedThisSession = true;
+    state.hasSavedTemplate = true;
+    touchState(state);
+    await interaction.update({
+      embeds: [buildSetupPanelEmbed(state)],
+      components: buildSetupPanelComponents(state),
+    });
+    return;
+  }
+
+  // Load saved template into the empty panel.
+  if (customId.startsWith("an_load:")) {
+    const saved = await loadSavedTemplate(state.guildId, state.mode).catch(() => null);
+    if (!saved) {
+      state.hasSavedTemplate = false;
+      touchState(state);
+      await interaction.update({
+        embeds: [buildSetupPanelEmbed(state)],
+        components: buildSetupPanelComponents(state),
+      });
+      return;
+    }
+    state.title = saved.title ?? "";
+    state.description = saved.description ?? "";
+    state.additional = saved.additional ?? "";
+    state.modalImageUrl = saved.modalImageUrl ?? "";
+    state.tagOn = saved.tagOn ?? true;
+    state.filled = !!saved.description;
+    state.savedThisSession = true;
+    state.hasSavedTemplate = true;
+    touchState(state);
+    await interaction.update({
+      embeds: [buildSetupPanelEmbed(state)],
+      components: buildSetupPanelComponents(state),
+    });
+    return;
+  }
+
   // Send
   if (customId.startsWith("an_send:")) {
     if (!state.filled) {
@@ -815,7 +1006,7 @@ async function handleAnnButton(interaction: ButtonInteraction, client: Client): 
     const isEvent = state.mode === "event";
     const titleColor: ColorResolvable = isEvent ? colors.eventTitleColor : colors.annTitleColor;
     const descColor:  ColorResolvable = isEvent ? colors.eventDescColor  : colors.annDescColor;
-    const addColor:   ColorResolvable = isEvent ? colors.eventColor : colors.annAddColor;
+    const addColor:   ColorResolvable = isEvent ? colors.eventAddColor   : colors.annAddColor;
 
     const titleResolved = state.title      ? await resolveEmojiCodes(await resolveTags(state.title,       guild), guild) : "";
     const descResolved  =                    await resolveEmojiCodes(await resolveTags(state.description,  guild), guild);
@@ -855,7 +1046,7 @@ async function handleAnnButton(interaction: ButtonInteraction, client: Client): 
       const logsChannel = await guild.channels.fetch(cfg.annLogsChannelId).catch(() => null) as TextChannel | null;
       if (logsChannel) {
         const logEmbed = new EmbedBuilder()
-          .setColor(isEvent ? colors.eventColor : colors.annTitleColor)
+          .setColor(isEvent ? colors.eventTitleColor : colors.annTitleColor)
           .setTitle(isEvent ? "\uD83C\uDF89 Event Posted" : "\uD83D\uDCE3 Announcement Posted")
           .addFields(
             { name: "Posted by", value: `<@${ownerId}>`,         inline: true },
@@ -876,22 +1067,30 @@ async function handleAnnModal(interaction: ModalSubmitInteraction, client: Clien
   const state = annSetupState.get(ownerId);
   if (!state) { await interaction.reply({ content: "\u274C Session expired.", ephemeral: true }); return; }
 
+  const newDescription = interaction.fields.getTextInputValue("an_description").trim();
+  const wasFilled = state.filled;
   state.title         = interaction.fields.getTextInputValue("an_title").trim();
-  state.description   = interaction.fields.getTextInputValue("an_description").trim();
+  state.description   = newDescription;
   state.additional    = interaction.fields.getTextInputValue("an_additional").trim();
   state.modalImageUrl = interaction.fields.getTextInputValue("an_image").trim();
   state.filled        = !!state.description;
+  // Editing details after a save means the saved-this-session marker no longer
+  // matches the panel — show "Save" again so they can re-save the new content.
+  if (wasFilled && state.savedThisSession) state.savedThisSession = false;
   touchState(state);
 
-  if (state.panelInteraction) {
+  // Always edit the stored panel message by ID so we don't depend on the
+  // ephemeral webhook token (which expires after 15 min). Fall back to the
+  // legacy panelInteraction path only if we somehow have no message ID.
+  if (state.panelMessageId) {
+    await editStoredSetupPanel(client, state);
+  } else if (state.panelInteraction) {
     try {
       await state.panelInteraction.editReply({
         embeds: [buildSetupPanelEmbed(state)],
         components: buildSetupPanelComponents(state),
       });
     } catch {}
-  } else {
-    await editStoredSetupPanel(client, state);
   }
 
   await interaction.reply({ content: "\u2705 Details saved!", ephemeral: true });
@@ -949,14 +1148,14 @@ async function handleAnnColorModal(interaction: ModalSubmitInteraction, client: 
   });
 
   const state = annSetupState.get(ownerId);
-  if (state?.panelInteraction) {
+  if (state?.panelMessageId) {
+    await editStoredSetupPanel(client, state);
+  } else if (state?.panelInteraction) {
     try {
       await state.panelInteraction.editReply({
         embeds: [buildSetupPanelEmbed(state)],
         components: buildSetupPanelComponents(state),
       });
     } catch {}
-  } else if (state) {
-    await editStoredSetupPanel(client, state);
   }
 }

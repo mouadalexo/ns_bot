@@ -36,6 +36,8 @@ export const botConfigTable = pgTable("bot_config", {
   annLogsChannelId: text("ann_logs_channel_id"),
   blockedChannelsJson: text("blocked_channels_json"),
   helpRoleIdsJson: text("help_role_ids_json"),
+  savedAnnTemplate: text("saved_ann_template"),
+  savedEventTemplate: text("saved_event_template"),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
