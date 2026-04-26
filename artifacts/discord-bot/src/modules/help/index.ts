@@ -76,17 +76,6 @@ const MEMBER_CATEGORIES: CategoryDef[] = [
       { syntax: `${p.pvs}adopt @user`, desc: "Send an adoption request — target accepts/rejects via buttons" },
     ],
   },
-  {
-    key: "music",
-    label: "Music Commands",
-    emoji: "\uD83C\uDFB5",
-    buildCommands: () => [
-      { syntax: "=album <link>", desc: "Post an album/single embed (DJ role required) — Deezer, Spotify, Apple Music, etc." },
-      { syntax: "=playlist <link>", desc: "Post a playlist embed (Playlist or DJ role required) — Deezer, Spotify, Apple Music, YouTube, SoundCloud, TIDAL, Amazon Music" },
-      { syntax: "=artists", desc: "List all artists tracked for auto new-release notifications" },
-      { syntax: "=add <artist name>", desc: "Add an artist to auto new-release tracking (DJ role required)" },
-    ],
-  },
 ];
 
 // ── STAFF CATEGORIES ────────────────────────────────────────────────────────
