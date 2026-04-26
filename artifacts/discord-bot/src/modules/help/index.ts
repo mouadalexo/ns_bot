@@ -134,7 +134,7 @@ const STAFF_CATEGORIES: CategoryDef[] = [
     emoji: "\uD83C\uDFB5",
     buildCommands: () => [
       { syntax: "=album <link>", desc: "Post an album/single embed (DJ role required) — Deezer, Spotify, Apple Music, etc." },
-      { syntax: "=playlist <link>", desc: "Post a playlist embed (Playlist or DJ role required) — Deezer, Spotify, Apple Music, YouTube, SoundCloud, TIDAL, Amazon Music" },
+      { syntax: "=playlist <link> [name]", desc: "Post a playlist embed (Playlist or DJ role required). Optional name override is useful for YouTube playlists with no metadata" },
       { syntax: "=artists", desc: "List all artists tracked for auto new-release notifications" },
       { syntax: "=add <artist name>", desc: "Add an artist to auto new-release tracking (DJ role required)" },
     ],

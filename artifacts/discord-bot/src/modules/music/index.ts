@@ -526,29 +526,35 @@ async function hasPlaylistAccess(message: Message): Promise<boolean> {
   return false;
 }
 
-async function buildPlaylistEmbeds(url: string, submitterName: string): Promise<PostPayload> {
+async function buildPlaylistEmbeds(url: string, _submitterName: string, nameOverride?: string): Promise<PostPayload> {
   const platform = detectPlatform(url);
   const meta     = await fetchUrlMetadata(url).catch(() => null);
-  const title    = (meta?.title || `${platform} Playlist`).trim();
+  const title    = (nameOverride?.trim() || meta?.title?.trim() || `${platform} Playlist`).trim();
   const curator  = meta?.artist?.trim() || null;
-  const tracks   = meta?.trackCount ? `${meta.trackCount} track${meta.trackCount !== 1 ? "s" : ""}` : null;
+  const cover    = meta?.image || null;
+  const color    = cover ? await extractCoverColor(cover) : FALLBACK_COLOR;
+  const tracks   = meta?.trackCount
+    ? `${meta.trackCount} track${meta.trackCount !== 1 ? "s" : ""}`
+    : "";
 
   const description = curator
     ? `# ${title}\nby ${toBold(curator)}`
     : `# ${title}`;
 
-  const footerParts: string[] = ["Playlist", platform];
-  if (tracks) footerParts.push(tracks);
-  footerParts.push(`shared by ${submitterName}`);
+  const metaParts: string[] = ["Playlist"];
+  if (tracks)   metaParts.push(tracks);
+  metaParts.push(platform);
 
-  const embed = new EmbedBuilder()
-    .setColor(FALLBACK_COLOR)
-    .setAuthor({ name: "NEW PLAYLIST · OUT NOW" })
+  const main = new EmbedBuilder()
+    .setColor(color)
+    .setAuthor({ name: "PLAYLIST" })
     .setDescription(description)
-    .setFooter({ text: footerParts.join("  •  ") });
+    .setFooter({ text: metaParts.join("  •  ") });
+
+  if (cover) main.setImage(cover);
 
   return {
-    embeds: [embed],
+    embeds: [main],
     components: [buildLinkRow(url)],
   };
 }
@@ -563,9 +569,19 @@ async function handlePostPlaylist(message: Message): Promise<void> {
     return;
   }
 
-  const url = message.content.trim().replace(/^=(?:postplaylist|playlist|addplaylist)\s*/i, "").trim();
-  if (!url || !/^https?:\/\//i.test(url)) {
-    await tempReply(message, "❌ Usage: `=playlist <playlist link>`");
+  const args = message.content.trim().replace(/^=(?:postplaylist|playlist|addplaylist)\s*/i, "").trim();
+  if (!args) {
+    await tempReply(message, "❌ Usage: `=playlist <playlist link> [optional name]`");
+    return;
+  }
+
+  // First whitespace-separated token = the URL. Anything after = optional name override.
+  const firstSpace   = args.search(/\s/);
+  const url          = firstSpace === -1 ? args : args.slice(0, firstSpace).trim();
+  const nameOverride = firstSpace === -1 ? undefined : args.slice(firstSpace + 1).trim() || undefined;
+
+  if (!/^https?:\/\//i.test(url)) {
+    await tempReply(message, "❌ Usage: `=playlist <playlist link> [optional name]`");
     return;
   }
 
@@ -590,7 +606,7 @@ async function handlePostPlaylist(message: Message): Promise<void> {
   await message.delete().catch(() => {});
 
   const submitter = message.member?.displayName ?? message.author.username;
-  const payload   = await buildPlaylistEmbeds(url, submitter);
+  const payload   = await buildPlaylistEmbeds(url, submitter, nameOverride);
   await targetChannel.send(payload);
 }
 
