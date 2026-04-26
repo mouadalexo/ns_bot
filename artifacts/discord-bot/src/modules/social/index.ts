@@ -82,9 +82,8 @@ function decisionButtons(groupId: string, disabled = false) {
   );
 }
 
-async function sendTemp(message: Message, e: EmbedBuilder, ttl = 10000) {
-  const sent = await message.channel.send({ embeds: [e] }).catch(() => null);
-  if (sent) setTimeout(() => sent.delete().catch(() => {}), ttl);
+async function sendTemp(message: Message, e: EmbedBuilder, _ttl = 10000) {
+  await message.channel.send({ embeds: [e] }).catch(() => null);
 }
 
 async function expireOld(guildId: string) {
