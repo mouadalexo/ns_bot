@@ -82,7 +82,12 @@ function decisionButtons(groupId: string, disabled = false) {
   );
 }
 
-async function sendTemp(message: Message, e: EmbedBuilder, _ttl = 10000) {
+async function sendTemp(message: Message, e: EmbedBuilder, ttl = 10000) {
+  const sent = await message.channel.send({ embeds: [e] }).catch(() => null);
+  if (sent) setTimeout(() => sent.delete().catch(() => {}), ttl);
+}
+
+async function sendPermanent(message: Message, e: EmbedBuilder) {
   await message.channel.send({ embeds: [e] }).catch(() => null);
 }
 
@@ -121,7 +126,7 @@ async function cmdRelationship(message: Message, requesterId: string, content: s
   const partner = await getPartner(message.guild!.id, userId);
   const subject = userId === requesterId ? "You are" : `<@${userId}> is`;
   if (!partner) {
-    await sendTemp(
+    await sendPermanent(
       message,
       embed(`${subject} currently **single** \uD83D\uDC94`, "Relationship Status"),
     );
@@ -132,14 +137,13 @@ async function cmdRelationship(message: Message, requesterId: string, content: s
     [message.guild!.id, userId],
   );
   const since = r.rows[0]?.since;
-  await sendTemp(
+  await sendPermanent(
     message,
     embed(
       `${subject} in a relationship with <@${partner}> \uD83D\uDC95` +
         (since ? `\nTogether since <t:${Math.floor(since.getTime() / 1000)}:D>` : ""),
       "Relationship Status",
     ),
-    15000,
   );
 }
 
@@ -234,16 +238,15 @@ async function cmdChildren(message: Message, userId: string) {
     [guildId, userId],
   );
   if (!r.rowCount) {
-    await sendTemp(message, embed(`<@${userId}> has no children yet.`, "Children"));
+    await sendPermanent(message, embed(`<@${userId}> has no children yet.`, "Children"));
     return;
   }
   const lines = r.rows.map(
     (row, i) => `**${i + 1}.** <@${row.child_id}> \u2014 since <t:${Math.floor(row.since.getTime() / 1000)}:D>`,
   );
-  await sendTemp(
+  await sendPermanent(
     message,
     embed(lines.join("\n"), `Children of ${message.guild!.members.cache.get(userId)?.displayName ?? "user"} (${r.rowCount}/${MAX_CHILDREN})`),
-    15000,
   );
 }
 
