@@ -610,34 +610,52 @@ export async function registerPanelCommands(client: Client) {
           } else if (interaction.customId.startsWith("mu_pick:")) {
             await handleMusicPickButton(interaction as ButtonInteraction);
           } else if (interaction.customId.startsWith("mu_link:")) {
-            // 🔗 link button on a release/playlist post: post the link as a
-            // plain message into the clicker's voice channel text chat. No
-            // voice join, no play command — just drops the URL where the
-            // user can see it next to whoever is hanging in voice with them.
+            // 🔗 link button on a release/playlist post: drop the link into
+            // the clicker's voice channel text chat as two plain messages
+            // (intro line + the URL on its own), and reply ephemerally with
+            // an embed in the album's color so the response visually matches
+            // the post they clicked.
             const btn = interaction as ButtonInteraction;
             const url = btn.customId.slice("mu_link:".length);
+            const albumColor = btn.message.embeds?.[0]?.color ?? 0x5000ff;
             const member = await btn.guild!.members.fetch(btn.user.id).catch(() => null);
             const voiceChannel = member?.voice?.channel;
             if (!voiceChannel || (voiceChannel.type !== ChannelType.GuildVoice && voiceChannel.type !== ChannelType.GuildStageVoice)) {
               await btn.reply({
-                content: "❌ Join a voice channel first, then click 🔗 again.",
+                embeds: [
+                  new EmbedBuilder()
+                    .setColor(albumColor)
+                    .setDescription("Join a voice channel first, then click 🔗 again to get the link in your voice chat."),
+                ],
                 ephemeral: true,
               });
               return;
             }
             try {
               await voiceChannel.send({
-                content: `🔗 ${btn.user} shared a link\n${url}`,
+                content: "here you got your album or playlist link enjoy !",
+                allowedMentions: { parse: [] },
+              });
+              await voiceChannel.send({
+                content: url,
                 allowedMentions: { parse: [] },
               });
               await btn.reply({
-                content: `🔗 Link sent to <#${voiceChannel.id}> chat.`,
+                embeds: [
+                  new EmbedBuilder()
+                    .setColor(albumColor)
+                    .setDescription(`You got the link in your voice chat (<#${voiceChannel.id}>).`),
+                ],
                 ephemeral: true,
               });
             } catch (err) {
               console.error("Music link send error:", err);
               await btn.reply({
-                content: "❌ I couldn't send the link there. Make sure I have **View Channel** + **Send Messages** in your voice channel.",
+                embeds: [
+                  new EmbedBuilder()
+                    .setColor(albumColor)
+                    .setDescription("I couldn't send the link there. Make sure I have **View Channel** + **Send Messages** in your voice channel."),
+                ],
                 ephemeral: true,
               });
             }

@@ -554,13 +554,13 @@ async function buildPlaylistEmbeds(url: string, submitterName: string): Promise<
 
 async function handlePostPlaylist(message: Message): Promise<void> {
   if (!await hasPlaylistAccess(message)) {
-    await tempReply(message, "❌ You need the **Playlist** (or DJ) role to use `=postplaylist`.");
+    await tempReply(message, "❌ You need the **Playlist** (or DJ) role to use `=playlist`.");
     return;
   }
 
   const url = message.content.trim().replace(/^=(?:postplaylist|playlist|addplaylist)\s*/i, "").trim();
   if (!url || !/^https?:\/\//i.test(url)) {
-    await tempReply(message, "❌ Usage: `=postplaylist <playlist link>`");
+    await tempReply(message, "❌ Usage: `=playlist <playlist link>`");
     return;
   }
 
@@ -579,7 +579,7 @@ async function handlePostPlaylist(message: Message): Promise<void> {
   if (playlistChannels.length && !playlistChannels.includes(message.channelId)) {
     await tempReply(
       message,
-      `❌ \`=postplaylist\` only works in the configured playlist room${playlistChannels.length > 1 ? "s" : ""}: ${playlistChannels.map((c) => `<#${c}>`).join(", ")}`
+      `❌ \`=playlist\` only works in the configured playlist channel${playlistChannels.length > 1 ? "s" : ""}: ${playlistChannels.map((c) => `<#${c}>`).join(", ")}`
     );
     return;
   }
@@ -637,13 +637,13 @@ async function handleListArtists(message: Message): Promise<void> {
 
 async function handlePost(message: Message): Promise<void> {
   if (!await hasDjAccess(message)) {
-    await tempReply(message, "❌ You need the **DJ** role to use `=post`.");
+    await tempReply(message, "❌ You need the **DJ** role to use `=album`.");
     return;
   }
 
-  const url = message.content.trim().replace(/^=post\s*/i, "").trim();
+  const url = message.content.trim().replace(/^=(?:post|album)\s*/i, "").trim();
   if (!url || !url.startsWith("http")) {
-    await tempReply(message, "❌ Usage: `=post <music link>`");
+    await tempReply(message, "❌ Usage: `=album <music link>`");
     return;
   }
 
@@ -903,7 +903,7 @@ export function registerMusicModule(client: Client): void {
 
     const raw = message.content.trim();
 
-    if (/^=post(\s|$)/i.test(raw)) {
+    if (/^=(?:post|album)(\s|$)/i.test(raw)) {
       await handlePost(message);
       return;
     }

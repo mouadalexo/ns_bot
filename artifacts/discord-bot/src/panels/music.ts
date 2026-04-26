@@ -105,8 +105,8 @@ async function buildMusicPanelEmbed(guildId: string): Promise<EmbedBuilder> {
     .setColor(MUSIC_COLOR)
     .setTitle("🎵 Music Release System")
     .setDescription(
-      "**Album flow:** `=post <link>` posts the album embed with a 🔗 button.\n" +
-      "**Playlist flow:** `=postplaylist <link>` posts a playlist embed with a 🔗 button.\n" +
+      "**Album flow:** `=album <link>` posts the album embed with a 🔗 button.\n" +
+      "**Playlist flow:** `=playlist <link>` posts a playlist embed with a 🔗 button.\n" +
       "**List artists:** `=artists` shows everyone you're tracking."
     )
     .addFields(
@@ -131,10 +131,8 @@ async function buildMusicPanelEmbed(guildId: string): Promise<EmbedBuilder> {
         inline: true,
       },
       {
-        name: "🎶 Playlist Rooms",
-        value: playlistChannels.length
-          ? playlistChannels.map((c) => `<#${c}>`).join(", ")
-          : "*Any channel*",
+        name: "🎶 Playlist Channel",
+        value: playlistChannels[0] ? `<#${playlistChannels[0]}>` : "*Not set*",
         inline: true,
       },
       {
@@ -180,10 +178,10 @@ function buildMusicPanelComponents(hasArtists: boolean): ActionRowBuilder<any>[]
     new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
       new ChannelSelectMenuBuilder()
         .setCustomId("mu_playlist_channels")
-        .setPlaceholder("🎶 Select Playlist Rooms (multiple)")
+        .setPlaceholder("🎶 Select Playlist Channel")
         .addChannelTypes(ChannelType.GuildText)
         .setMinValues(0)
-        .setMaxValues(10)
+        .setMaxValues(1)
     ),
     new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
