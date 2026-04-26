@@ -29,50 +29,63 @@ import {
 
 const MUSIC_COLOR = 0x5000ff;
 
-async function getMusicConfig(guildId: string) {
-  const res = await pool.query<{
-    dj_role_id: string | null;
-    notification_channel_id: string | null;
-    play_command: string | null;
-  }>(
-    "SELECT dj_role_id, notification_channel_id, play_command FROM music_config WHERE guild_id = $1",
-    [guildId]
-  );
-  return res.rows[0] ?? { dj_role_id: null, notification_channel_id: null, play_command: null };
+interface MusicConfigRow {
+  dj_role_id: string | null;
+  notification_channel_id: string | null;
+  playlist_role_id: string | null;
+  playlist_channel_ids_json: string | null;
 }
 
-async function saveMusicConfig(
-  guildId: string,
-  djRoleId: string | null,
-  channelId: string | null,
-  playCommand?: string | null,
-): Promise<void> {
-  // Three-arg legacy callers (DJ-role / channel changes) shouldn't blow away
-  // the existing play command, so we only update it when explicitly passed.
-  if (typeof playCommand === "undefined") {
-    await pool.query(
-      `INSERT INTO music_config (guild_id, dj_role_id, notification_channel_id)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (guild_id) DO UPDATE SET dj_role_id = $2, notification_channel_id = $3, updated_at = now()`,
-      [guildId, djRoleId, channelId]
-    );
-    return;
+async function getMusicConfig(guildId: string): Promise<MusicConfigRow> {
+  const res = await pool.query<MusicConfigRow>(
+    "SELECT dj_role_id, notification_channel_id, playlist_role_id, playlist_channel_ids_json FROM music_config WHERE guild_id = $1",
+    [guildId]
+  );
+  return res.rows[0] ?? {
+    dj_role_id: null,
+    notification_channel_id: null,
+    playlist_role_id: null,
+    playlist_channel_ids_json: "[]",
+  };
+}
+
+function parsePlaylistChannelIds(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
   }
+}
+
+interface MusicConfigPatch {
+  djRoleId?: string | null;
+  channelId?: string | null;
+  playlistRoleId?: string | null;
+  playlistChannelIds?: string[];
+}
+
+async function upsertMusicConfig(guildId: string, patch: MusicConfigPatch): Promise<void> {
+  const current = await getMusicConfig(guildId);
+  const djRoleId   = patch.djRoleId   !== undefined ? patch.djRoleId   : current.dj_role_id;
+  const channelId  = patch.channelId  !== undefined ? patch.channelId  : current.notification_channel_id;
+  const plRoleId   = patch.playlistRoleId !== undefined ? patch.playlistRoleId : current.playlist_role_id;
+  const plChannels = patch.playlistChannelIds !== undefined
+    ? JSON.stringify(patch.playlistChannelIds)
+    : (current.playlist_channel_ids_json ?? "[]");
+
   await pool.query(
-    `INSERT INTO music_config (guild_id, dj_role_id, notification_channel_id, play_command)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO music_config (guild_id, dj_role_id, notification_channel_id, playlist_role_id, playlist_channel_ids_json)
+     VALUES ($1, $2, $3, $4, $5)
      ON CONFLICT (guild_id) DO UPDATE
        SET dj_role_id = $2,
            notification_channel_id = $3,
-           play_command = $4,
+           playlist_role_id = $4,
+           playlist_channel_ids_json = $5,
            updated_at = now()`,
-    [guildId, djRoleId, channelId, playCommand]
+    [guildId, djRoleId, channelId, plRoleId, plChannels]
   );
-}
-
-export async function getPlayCommand(guildId: string): Promise<string | null> {
-  const cfg = await getMusicConfig(guildId);
-  return cfg.play_command;
 }
 
 async function getTrackedArtists(guildId: string): Promise<{ deezer_artist_id: string; artist_name: string }[]> {
@@ -86,32 +99,53 @@ async function getTrackedArtists(guildId: string): Promise<{ deezer_artist_id: s
 async function buildMusicPanelEmbed(guildId: string): Promise<EmbedBuilder> {
   const cfg     = await getMusicConfig(guildId);
   const artists = await getTrackedArtists(guildId);
+  const playlistChannels = parsePlaylistChannelIds(cfg.playlist_channel_ids_json);
 
   return new EmbedBuilder()
     .setColor(MUSIC_COLOR)
     .setTitle("🎵 Music Release System")
+    .setDescription(
+      "**Album flow:** `=post <link>` posts the album embed with a 🔗 button.\n" +
+      "**Playlist flow:** `=postplaylist <link>` posts a playlist embed with a 🔗 button.\n" +
+      "**List artists:** `=artists` shows everyone you're tracking."
+    )
     .addFields(
       {
-        name: "DJ Role",
+        name: "🎤 DJ Role (albums)",
         value: cfg.dj_role_id ? `<@&${cfg.dj_role_id}>` : "*Not set*",
         inline: true,
       },
       {
-        name: "Notification Channel",
+        name: "📢 Album Channel",
         value: cfg.notification_channel_id ? `<#${cfg.notification_channel_id}>` : "*Not set*",
         inline: true,
       },
       {
-        name: "Music Bot Play Command",
-        value: cfg.play_command
-          ? `\`${cfg.play_command}\` *(used when ▶️ is clicked)*`
-          : "*Not set — ▶️ play button will be disabled*",
-        inline: false,
+        name: "\u200b",
+        value: "\u200b",
+        inline: true,
+      },
+      {
+        name: "🎧 Playlist Role",
+        value: cfg.playlist_role_id ? `<@&${cfg.playlist_role_id}>` : "*Not set — DJ role can also post playlists*",
+        inline: true,
+      },
+      {
+        name: "🎶 Playlist Rooms",
+        value: playlistChannels.length
+          ? playlistChannels.map((c) => `<#${c}>`).join(", ")
+          : "*Any channel*",
+        inline: true,
+      },
+      {
+        name: "\u200b",
+        value: "\u200b",
+        inline: true,
       },
       {
         name: `Tracked Artists (${artists.length})`,
         value: artists.length
-          ? artists.map((a, i) => `\`${(i + 1).toString().padStart(2, "0")}\` ${a.artist_name}`).join("\n")
+          ? artists.map((a, i) => `\`${(i + 1).toString().padStart(2, "0")}\` ${a.artist_name}`).join("\n").slice(0, 1024)
           : "*None yet — click **Add Artist** below*",
         inline: false,
       }
@@ -124,17 +158,32 @@ function buildMusicPanelComponents(hasArtists: boolean): ActionRowBuilder<any>[]
     new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(
       new RoleSelectMenuBuilder()
         .setCustomId("mu_dj_role")
-        .setPlaceholder("Select DJ Role")
+        .setPlaceholder("🎤 Select DJ Role (albums)")
         .setMinValues(0)
         .setMaxValues(1)
     ),
     new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
       new ChannelSelectMenuBuilder()
         .setCustomId("mu_channel")
-        .setPlaceholder("Select Notification Channel")
+        .setPlaceholder("📢 Select Album Notification Channel")
         .addChannelTypes(ChannelType.GuildText)
         .setMinValues(0)
         .setMaxValues(1)
+    ),
+    new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(
+      new RoleSelectMenuBuilder()
+        .setCustomId("mu_playlist_role")
+        .setPlaceholder("🎧 Select Playlist Role")
+        .setMinValues(0)
+        .setMaxValues(1)
+    ),
+    new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
+      new ChannelSelectMenuBuilder()
+        .setCustomId("mu_playlist_channels")
+        .setPlaceholder("🎶 Select Playlist Rooms (multiple)")
+        .addChannelTypes(ChannelType.GuildText)
+        .setMinValues(0)
+        .setMaxValues(10)
     ),
     new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
@@ -147,51 +196,11 @@ function buildMusicPanelComponents(hasArtists: boolean): ActionRowBuilder<any>[]
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(!hasArtists),
       new ButtonBuilder()
-        .setCustomId("mu_set_playcmd")
-        .setLabel("🎛️ Set Play Cmd")
-        .setStyle(ButtonStyle.Primary),
-      new ButtonBuilder()
         .setCustomId("mu_reset")
         .setLabel("🗑️ Reset Config")
         .setStyle(ButtonStyle.Danger)
     ),
   ];
-}
-
-// Open a modal so the admin can type the music-bot prefix used when the ▶️
-// button is clicked (e.g. "!p", "?play", "m!play"). Submitting an empty value
-// disables the ▶️ button (we treat null as unset).
-export async function handleMusicSetPlayCmdButton(interaction: ButtonInteraction): Promise<void> {
-  const cfg = await getMusicConfig(interaction.guildId!);
-  const modal = new ModalBuilder()
-    .setCustomId("mu_playcmd_modal")
-    .setTitle("Music Bot Play Command")
-    .addComponents(
-      new ActionRowBuilder<TextInputBuilder>().addComponents(
-        new TextInputBuilder()
-          .setCustomId("playcmd")
-          .setLabel("Command (the album link is appended)")
-          .setPlaceholder("!p")
-          .setStyle(TextInputStyle.Short)
-          .setRequired(false)
-          .setMaxLength(20)
-          .setValue(cfg.play_command ?? "")
-      )
-    );
-  await interaction.showModal(modal);
-}
-
-export async function handleMusicSetPlayCmdModal(interaction: ModalSubmitInteraction): Promise<void> {
-  const raw = interaction.fields.getTextInputValue("playcmd").trim();
-  const value = raw.length ? raw : null;
-  const cfg = await getMusicConfig(interaction.guildId!);
-  await saveMusicConfig(interaction.guildId!, cfg.dj_role_id, cfg.notification_channel_id, value);
-  await interaction.reply({
-    content: value
-      ? `✅ Play command set to \`${value}\`. The ▶️ button will now make me join your voice and post \`${value} <album-link>\`.`
-      : "✅ Play command cleared. The ▶️ button will be disabled until you set one.",
-    ephemeral: true,
-  });
 }
 
 async function refreshPanel(
@@ -216,23 +225,32 @@ export async function openMusicPanel(interaction: ChatInputCommandInteraction): 
 }
 
 export async function handleMusicDjRoleSelect(interaction: RoleSelectMenuInteraction): Promise<void> {
-  const guildId = interaction.guildId!;
-  const cfg     = await getMusicConfig(guildId);
-  const roleId  = interaction.values[0] ?? null;
-  await saveMusicConfig(guildId, roleId, cfg.notification_channel_id);
+  await upsertMusicConfig(interaction.guildId!, { djRoleId: interaction.values[0] ?? null });
   await refreshPanel(interaction);
 }
 
 export async function handleMusicChannelSelect(interaction: ChannelSelectMenuInteraction): Promise<void> {
-  const guildId   = interaction.guildId!;
-  const cfg       = await getMusicConfig(guildId);
-  const channelId = interaction.values[0] ?? null;
-  await saveMusicConfig(guildId, cfg.dj_role_id, channelId);
+  await upsertMusicConfig(interaction.guildId!, { channelId: interaction.values[0] ?? null });
+  await refreshPanel(interaction);
+}
+
+export async function handleMusicPlaylistRoleSelect(interaction: RoleSelectMenuInteraction): Promise<void> {
+  await upsertMusicConfig(interaction.guildId!, { playlistRoleId: interaction.values[0] ?? null });
+  await refreshPanel(interaction);
+}
+
+export async function handleMusicPlaylistChannelsSelect(interaction: ChannelSelectMenuInteraction): Promise<void> {
+  await upsertMusicConfig(interaction.guildId!, { playlistChannelIds: [...interaction.values] });
   await refreshPanel(interaction);
 }
 
 export async function handleMusicReset(interaction: ButtonInteraction): Promise<void> {
-  await saveMusicConfig(interaction.guildId!, null, null);
+  await upsertMusicConfig(interaction.guildId!, {
+    djRoleId: null,
+    channelId: null,
+    playlistRoleId: null,
+    playlistChannelIds: [],
+  });
   await refreshPanel(interaction);
 }
 
@@ -264,7 +282,6 @@ export async function handleMusicAddModalSubmit(interaction: ModalSubmitInteract
 
   await interaction.deferReply({ ephemeral: true });
 
-  // If the input is a Deezer link (artist/album/track), resolve directly to the artist
   if (/^https?:\/\/(www\.)?deezer\.com\//i.test(query)) {
     const direct = await resolveArtistFromDeezerLink(query);
     if (!direct) {

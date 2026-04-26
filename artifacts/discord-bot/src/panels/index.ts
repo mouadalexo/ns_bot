@@ -106,6 +106,8 @@ import {
   openMusicPanel,
   handleMusicDjRoleSelect,
   handleMusicChannelSelect,
+  handleMusicPlaylistRoleSelect,
+  handleMusicPlaylistChannelsSelect,
   handleMusicReset,
   handleMusicAddArtistButton,
   handleMusicAddModalSubmit,
@@ -113,11 +115,7 @@ import {
   handleMusicPickCancel,
   handleMusicRemoveButton,
   handleMusicRemoveSelect,
-  handleMusicSetPlayCmdButton,
-  handleMusicSetPlayCmdModal,
-  getPlayCommand,
 } from "./music.js";
-import { enqueuePlayRequest } from "../modules/music/playQueue.js";
 import {
   openAutoModPanel,
   handleAutoModButton,
@@ -611,52 +609,38 @@ export async function registerPanelCommands(client: Client) {
             await handleMusicPickCancel(interaction as ButtonInteraction);
           } else if (interaction.customId.startsWith("mu_pick:")) {
             await handleMusicPickButton(interaction as ButtonInteraction);
-          } else if (interaction.customId === "mu_set_playcmd") {
-            await handleMusicSetPlayCmdButton(interaction as ButtonInteraction);
-          } else if (interaction.customId.startsWith("mu_play:")) {
-            // ▶️ play button on a release post: queue the request to join the
-            // clicker's voice channel and post the music-bot play command.
+          } else if (interaction.customId.startsWith("mu_link:")) {
+            // 🔗 link button on a release/playlist post: post the link as a
+            // plain message into the clicker's voice channel text chat. No
+            // voice join, no play command — just drops the URL where the
+            // user can see it next to whoever is hanging in voice with them.
             const btn = interaction as ButtonInteraction;
-            const url = btn.customId.slice("mu_play:".length);
-            const playCmd = await getPlayCommand(btn.guildId!);
-            if (!playCmd) {
-              await btn.reply({
-                content: "❌ No music-bot play command is set yet. An admin can set it from `/music` → **🎛️ Set Play Cmd**.",
-                ephemeral: true,
-              });
-              return;
-            }
+            const url = btn.customId.slice("mu_link:".length);
             const member = await btn.guild!.members.fetch(btn.user.id).catch(() => null);
             const voiceChannel = member?.voice?.channel;
             if (!voiceChannel || (voiceChannel.type !== ChannelType.GuildVoice && voiceChannel.type !== ChannelType.GuildStageVoice)) {
               await btn.reply({
-                content: "❌ Join a voice channel first, then click ▶️ again.",
+                content: "❌ Join a voice channel first, then click 🔗 again.",
                 ephemeral: true,
               });
               return;
             }
-            const result = enqueuePlayRequest({
-              guildId: btn.guildId!,
-              voiceChannelId: voiceChannel.id,
-              textChannelId: btn.channelId!,
-              requesterId: btn.user.id,
-              playCmd,
-              link: url,
-              client: btn.client,
-            });
-            if (result.kind === "cooldown") {
+            try {
+              await voiceChannel.send({
+                content: `🔗 ${btn.user} shared a link\n${url}`,
+                allowedMentions: { parse: [] },
+              });
               await btn.reply({
-                content: `⏳ Slow down — try again in ${result.retryInSeconds}s.`,
+                content: `🔗 Link sent to <#${voiceChannel.id}> chat.`,
                 ephemeral: true,
               });
-              return;
+            } catch (err) {
+              console.error("Music link send error:", err);
+              await btn.reply({
+                content: "❌ I couldn't send the link there. Make sure I have **View Channel** + **Send Messages** in your voice channel.",
+                ephemeral: true,
+              });
             }
-            await btn.reply({
-              content: result.position === 0
-                ? `▶️ Joining <#${voiceChannel.id}> now…`
-                : `▶️ Queued — you're #${result.position + 1} in line.`,
-              ephemeral: true,
-            });
           }
         } catch (err) {
           console.error("Music button error:", err);
@@ -707,6 +691,10 @@ export async function registerPanelCommands(client: Client) {
         try { await handleMusicDjRoleSelect(interaction as RoleSelectMenuInteraction); } catch (err) { console.error("Music role select error:", err); }
         return;
       }
+      if (interaction.customId === "mu_playlist_role") {
+        try { await handleMusicPlaylistRoleSelect(interaction as RoleSelectMenuInteraction); } catch (err) { console.error("Music playlist role select error:", err); }
+        return;
+      }
       await handleRoleSelectInteraction(interaction as RoleSelectMenuInteraction);
       return;
     }
@@ -726,6 +714,10 @@ export async function registerPanelCommands(client: Client) {
       }
       if (interaction.customId === "mu_channel") {
         try { await handleMusicChannelSelect(interaction as ChannelSelectMenuInteraction); } catch (err) { console.error("Music channel select error:", err); }
+        return;
+      }
+      if (interaction.customId === "mu_playlist_channels") {
+        try { await handleMusicPlaylistChannelsSelect(interaction as ChannelSelectMenuInteraction); } catch (err) { console.error("Music playlist channels select error:", err); }
         return;
       }
       await handleChannelSelectInteraction(interaction as ChannelSelectMenuInteraction);
@@ -755,8 +747,6 @@ export async function registerPanelCommands(client: Client) {
         try { await handleWelcomeModalSubmit(interaction as ModalSubmitInteraction); } catch (err) { console.error("Welcome modal error:", err); }
       } else if (customId === "mu_add_modal") {
         try { await handleMusicAddModalSubmit(interaction as ModalSubmitInteraction); } catch (err) { console.error("Music add modal error:", err); }
-      } else if (customId === "mu_playcmd_modal") {
-        try { await handleMusicSetPlayCmdModal(interaction as ModalSubmitInteraction); } catch (err) { console.error("Music play-cmd modal error:", err); }
       }
       return;
     }

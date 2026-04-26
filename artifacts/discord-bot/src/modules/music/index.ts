@@ -202,14 +202,14 @@ function cleanCopyUrl(url: string): string {
   }
 }
 
-function buildPlayRow(url: string): ActionRowBuilder<ButtonBuilder> {
+function buildLinkRow(url: string): ActionRowBuilder<ButtonBuilder> {
   const clean = cleanCopyUrl(url);
-  // Discord custom_id limit: 100 chars. "mu_play:" prefix = 8, leaves 92 for URL.
+  // Discord custom_id limit: 100 chars. "mu_link:" prefix = 8, leaves 92 for URL.
   const idUrl = clean.length <= 92 ? clean : url.slice(0, 92);
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
-      .setCustomId(`mu_play:${idUrl}`)
-      .setEmoji("▶️")
+      .setCustomId(`mu_link:${idUrl}`)
+      .setEmoji("🔗")
       .setStyle(ButtonStyle.Secondary)
   );
 }
@@ -246,7 +246,7 @@ async function buildReleaseEmbeds(album: DeezerAlbum, copyUrl?: string, markAsNe
   const url = copyUrl ?? album.link;
   return {
     embeds: [main],
-    components: url ? [buildPlayRow(url)] : [],
+    components: url ? [buildLinkRow(url)] : [],
   };
 }
 
@@ -426,7 +426,7 @@ async function buildExternalReleaseEmbeds(meta: UrlMetadata, url: string, markAs
 
   return {
     embeds: [main],
-    components: [buildPlayRow(url)],
+    components: [buildLinkRow(url)],
   };
 }
 
@@ -438,7 +438,7 @@ function buildGenericDropEmbeds(url: string, _djName: string): PostPayload {
         .setAuthor({ name: "NEW DROP · OUT NOW" })
         .setDescription(`# ${detectPlatform(url)} Release`),
     ],
-    components: [buildPlayRow(url)],
+    components: [buildLinkRow(url)],
   };
 }
 
@@ -462,6 +462,177 @@ async function hasDjAccess(message: Message): Promise<boolean> {
 async function tempReply(message: Message, text: string, ms = 8000): Promise<void> {
   const reply = await message.reply(text);
   setTimeout(() => reply.delete().catch(() => {}), ms);
+}
+
+/**
+ * Per-platform regex matching a playlist URL. We intentionally check the URL
+ * shape only (no API call) so the validator stays fast and offline-safe.
+ *   • Spotify     → /playlist/<id>
+ *   • Apple Music → /<lang>/playlist/<slug>/pl.<id>
+ *   • YouTube     → ?list=<id>  (any youtube domain, including music.youtube)
+ *   • SoundCloud  → /<user>/sets/<name>
+ *   • Deezer      → /[lang/]playlist/<id>
+ */
+const PLAYLIST_PATTERNS: Array<{ name: string; re: RegExp }> = [
+  { name: "Spotify",       re: /open\.spotify\.com\/(?:[a-z-]+\/)?playlist\/[A-Za-z0-9]+/i },
+  { name: "Apple Music",   re: /(?:music|itunes)\.apple\.com\/[a-z-]+\/playlist\/[^/]+\/pl\.[A-Za-z0-9]+/i },
+  { name: "YouTube",       re: /(?:youtube\.com|youtu\.be|music\.youtube\.com)\/.*[?&]list=[A-Za-z0-9_-]+/i },
+  { name: "SoundCloud",    re: /soundcloud\.com\/[^/]+\/sets\/[^/?#]+/i },
+  { name: "Deezer",        re: /deezer\.com\/(?:[a-z]{2}\/)?playlist\/\d+/i },
+  { name: "TIDAL",         re: /tidal\.com\/(?:browse\/)?playlist\/[A-Za-z0-9-]+/i },
+  { name: "Amazon Music",  re: /(?:music\.amazon|amazon\.com\/music)\/playlists\/[A-Za-z0-9]+/i },
+];
+
+function isPlaylistUrl(url: string): { ok: true; platform: string } | { ok: false } {
+  for (const p of PLAYLIST_PATTERNS) {
+    if (p.re.test(url)) return { ok: true, platform: p.name };
+  }
+  return { ok: false };
+}
+
+async function getPlaylistChannelIds(guildId: string): Promise<string[]> {
+  const res = await pool.query<{ playlist_channel_ids_json: string | null }>(
+    "SELECT playlist_channel_ids_json FROM music_config WHERE guild_id = $1",
+    [guildId]
+  );
+  const raw = res.rows[0]?.playlist_channel_ids_json;
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+async function getPlaylistRoleId(guildId: string): Promise<string | null> {
+  const res = await pool.query<{ playlist_role_id: string | null }>(
+    "SELECT playlist_role_id FROM music_config WHERE guild_id = $1",
+    [guildId]
+  );
+  return res.rows[0]?.playlist_role_id ?? null;
+}
+
+async function hasPlaylistAccess(message: Message): Promise<boolean> {
+  if (!message.member || !message.guildId) return false;
+  if (message.member.permissions.has(PermissionFlagsBits.Administrator)) return true;
+  const roleId = await getPlaylistRoleId(message.guildId);
+  if (roleId && message.member.roles.cache.has(roleId)) return true;
+  // Falling back to DJ role keeps a single-role workflow for servers that
+  // haven't configured a separate Playlist role yet.
+  const { djRoleId } = await getMusicConfig(message.guildId);
+  if (djRoleId && message.member.roles.cache.has(djRoleId)) return true;
+  return false;
+}
+
+async function buildPlaylistEmbeds(url: string, submitterName: string): Promise<PostPayload> {
+  const platform = detectPlatform(url);
+  const meta     = await fetchUrlMetadata(url).catch(() => null);
+  const title    = (meta?.title || `${platform} Playlist`).trim();
+  const curator  = meta?.artist?.trim() || null;
+  const tracks   = meta?.trackCount ? `${meta.trackCount} track${meta.trackCount !== 1 ? "s" : ""}` : null;
+
+  const description = curator
+    ? `# ${title}\nby ${toBold(curator)}`
+    : `# ${title}`;
+
+  const footerParts: string[] = ["Playlist", platform];
+  if (tracks) footerParts.push(tracks);
+  footerParts.push(`shared by ${submitterName}`);
+
+  const embed = new EmbedBuilder()
+    .setColor(FALLBACK_COLOR)
+    .setAuthor({ name: "NEW PLAYLIST · OUT NOW" })
+    .setDescription(description)
+    .setFooter({ text: footerParts.join("  •  ") });
+
+  return {
+    embeds: [embed],
+    components: [buildLinkRow(url)],
+  };
+}
+
+async function handlePostPlaylist(message: Message): Promise<void> {
+  if (!await hasPlaylistAccess(message)) {
+    await tempReply(message, "❌ You need the **Playlist** (or DJ) role to use `=postplaylist`.");
+    return;
+  }
+
+  const url = message.content.trim().replace(/^=(?:postplaylist|playlist|addplaylist)\s*/i, "").trim();
+  if (!url || !/^https?:\/\//i.test(url)) {
+    await tempReply(message, "❌ Usage: `=postplaylist <playlist link>`");
+    return;
+  }
+
+  const check = isPlaylistUrl(url);
+  if (!check.ok) {
+    await tempReply(
+      message,
+      "❌ That doesn't look like a real music-platform playlist link.\n" +
+      "Supported: Spotify, Apple Music, YouTube/YouTube Music, SoundCloud, Deezer, TIDAL, Amazon Music."
+    );
+    return;
+  }
+
+  const playlistChannels = await getPlaylistChannelIds(message.guildId!);
+  // If admins set dedicated playlist rooms, only allow posting from those.
+  if (playlistChannels.length && !playlistChannels.includes(message.channelId)) {
+    await tempReply(
+      message,
+      `❌ \`=postplaylist\` only works in the configured playlist room${playlistChannels.length > 1 ? "s" : ""}: ${playlistChannels.map((c) => `<#${c}>`).join(", ")}`
+    );
+    return;
+  }
+
+  await message.delete().catch(() => {});
+
+  const submitter = message.member?.displayName ?? message.author.username;
+  const payload   = await buildPlaylistEmbeds(url, submitter);
+  await (message.channel as TextChannel).send(payload);
+}
+
+async function handleListArtists(message: Message): Promise<void> {
+  if (!message.guildId) return;
+  const artists = await pool.query<{ artist_name: string; deezer_artist_id: string; added_at: Date }>(
+    "SELECT artist_name, deezer_artist_id, added_at FROM music_artists WHERE guild_id = $1 ORDER BY artist_name ASC",
+    [message.guildId]
+  );
+
+  const channel = message.channel as TextChannel;
+  await message.delete().catch(() => {});
+
+  if (!artists.rows.length) {
+    const empty = new EmbedBuilder()
+      .setColor(FALLBACK_COLOR)
+      .setTitle("🎵 Tracked Artists")
+      .setDescription("*No artists tracked yet.*\nAn admin can add one with `=add <artist name>` or via `/music` → **➕ Add Artist**.")
+      .setFooter({ text: "Night Stars • Music" });
+    const m = await channel.send({ embeds: [empty] });
+    setTimeout(() => m.delete().catch(() => {}), 30_000);
+    return;
+  }
+
+  // Discord embed description hard-cap is 4096 chars. Split into chunks of ~25
+  // names per page to keep things tidy and readable.
+  const PAGE_SIZE = 25;
+  const pages: string[] = [];
+  for (let i = 0; i < artists.rows.length; i += PAGE_SIZE) {
+    const slice = artists.rows.slice(i, i + PAGE_SIZE);
+    pages.push(
+      slice
+        .map((a, idx) => `\`${(i + idx + 1).toString().padStart(2, "0")}\` **${a.artist_name}** — [Deezer](https://www.deezer.com/artist/${a.deezer_artist_id})`)
+        .join("\n")
+    );
+  }
+
+  for (let p = 0; p < pages.length; p++) {
+    const embed = new EmbedBuilder()
+      .setColor(FALLBACK_COLOR)
+      .setTitle(`🎵 Tracked Artists${pages.length > 1 ? `  •  Page ${p + 1}/${pages.length}` : ""}`)
+      .setDescription(pages[p])
+      .setFooter({ text: `Night Stars • Music  •  ${artists.rows.length} artist${artists.rows.length !== 1 ? "s" : ""} tracked` });
+    await channel.send({ embeds: [embed] });
+  }
 }
 
 async function handlePost(message: Message): Promise<void> {
@@ -737,6 +908,16 @@ export function registerMusicModule(client: Client): void {
       return;
     }
 
+    if (/^=(?:postplaylist|playlist|addplaylist)(\s|$)/i.test(raw)) {
+      await handlePostPlaylist(message);
+      return;
+    }
+
+    if (/^=artists?(\s|$)/i.test(raw)) {
+      await handleListArtists(message);
+      return;
+    }
+
     if (/^=add(\s|$)/i.test(raw)) {
       await handleAdd(message);
       return;
@@ -810,8 +991,13 @@ export async function ensureMusicSchema(): Promise<void> {
       guild_id text NOT NULL UNIQUE,
       dj_role_id text,
       notification_channel_id text,
+      playlist_role_id text,
+      playlist_channel_ids_json text DEFAULT '[]',
       updated_at timestamp DEFAULT now()
     );
+
+    ALTER TABLE music_config ADD COLUMN IF NOT EXISTS playlist_role_id text;
+    ALTER TABLE music_config ADD COLUMN IF NOT EXISTS playlist_channel_ids_json text DEFAULT '[]';
 
     CREATE TABLE IF NOT EXISTS music_artists (
       id serial PRIMARY KEY,
