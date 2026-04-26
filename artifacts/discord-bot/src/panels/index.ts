@@ -617,7 +617,11 @@ export async function registerPanelCommands(client: Client) {
             // the post they clicked.
             const btn = interaction as ButtonInteraction;
             const url = btn.customId.slice("mu_link:".length);
-            const albumColor = btn.message.embeds?.[0]?.color ?? 0x5000ff;
+            const sourceEmbed = btn.message.embeds?.[0];
+            const albumColor = sourceEmbed?.color ?? 0x5000ff;
+            const authorName = sourceEmbed?.author?.name ?? "";
+            const isPlaylist = /playlist/i.test(authorName);
+            const kind = isPlaylist ? "playlist" : "album";
             const member = await btn.guild!.members.fetch(btn.user.id).catch(() => null);
             const voiceChannel = member?.voice?.channel;
             if (!voiceChannel || (voiceChannel.type !== ChannelType.GuildVoice && voiceChannel.type !== ChannelType.GuildStageVoice)) {
@@ -625,7 +629,7 @@ export async function registerPanelCommands(client: Client) {
                 embeds: [
                   new EmbedBuilder()
                     .setColor(albumColor)
-                    .setDescription("Join a voice channel first, then click 🔗 again to get the link in your voice chat."),
+                    .setDescription(`Join a voice channel first, then click 🔗 again to get the ${kind} link in your voice chat.`),
                 ],
                 ephemeral: true,
               });
@@ -633,7 +637,7 @@ export async function registerPanelCommands(client: Client) {
             }
             try {
               await voiceChannel.send({
-                content: "here you got your album or playlist link enjoy !",
+                content: `Here is your ${kind} link — enjoy!`,
                 allowedMentions: { parse: [] },
               });
               await voiceChannel.send({
@@ -644,7 +648,7 @@ export async function registerPanelCommands(client: Client) {
                 embeds: [
                   new EmbedBuilder()
                     .setColor(albumColor)
-                    .setDescription(`You got the link in your voice chat (<#${voiceChannel.id}>).`),
+                    .setDescription(`You got the ${kind} link in your voice chat (<#${voiceChannel.id}>).`),
                 ],
                 ephemeral: true,
               });
