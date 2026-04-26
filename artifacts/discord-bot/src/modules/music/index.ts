@@ -526,10 +526,10 @@ async function hasPlaylistAccess(message: Message): Promise<boolean> {
   return false;
 }
 
-async function buildPlaylistEmbeds(url: string, _submitterName: string, nameOverride?: string): Promise<PostPayload> {
+async function buildPlaylistEmbeds(url: string, _submitterName: string): Promise<PostPayload> {
   const platform = detectPlatform(url);
   const meta     = await fetchUrlMetadata(url).catch(() => null);
-  const title    = (nameOverride?.trim() || meta?.title?.trim() || `${platform} Playlist`).trim();
+  const title    = (meta?.title?.trim() || `${platform} Playlist`).trim();
   const curator  = meta?.artist?.trim() || null;
   const cover    = meta?.image || null;
   const color    = cover ? await extractCoverColor(cover) : FALLBACK_COLOR;
@@ -569,19 +569,9 @@ async function handlePostPlaylist(message: Message): Promise<void> {
     return;
   }
 
-  const args = message.content.trim().replace(/^=(?:postplaylist|playlist|addplaylist)\s*/i, "").trim();
-  if (!args) {
-    await tempReply(message, "❌ Usage: `=playlist <playlist link> [optional name]`");
-    return;
-  }
-
-  // First whitespace-separated token = the URL. Anything after = optional name override.
-  const firstSpace   = args.search(/\s/);
-  const url          = firstSpace === -1 ? args : args.slice(0, firstSpace).trim();
-  const nameOverride = firstSpace === -1 ? undefined : args.slice(firstSpace + 1).trim() || undefined;
-
-  if (!/^https?:\/\//i.test(url)) {
-    await tempReply(message, "❌ Usage: `=playlist <playlist link> [optional name]`");
+  const url = message.content.trim().replace(/^=(?:postplaylist|playlist|addplaylist)\s*/i, "").trim();
+  if (!url || !/^https?:\/\//i.test(url)) {
+    await tempReply(message, "❌ Usage: `=playlist <playlist link>`");
     return;
   }
 
@@ -606,7 +596,7 @@ async function handlePostPlaylist(message: Message): Promise<void> {
   await message.delete().catch(() => {});
 
   const submitter = message.member?.displayName ?? message.author.username;
-  const payload   = await buildPlaylistEmbeds(url, submitter, nameOverride);
+  const payload   = await buildPlaylistEmbeds(url, submitter);
   await targetChannel.send(payload);
 }
 
