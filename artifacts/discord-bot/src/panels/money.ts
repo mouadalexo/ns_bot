@@ -165,7 +165,8 @@ export async function handleMoneySetPayment(interaction: ButtonInteraction): Pro
     new ActionRowBuilder<TextInputBuilder>().addComponents(
       new TextInputBuilder()
         .setCustomId("paypal")
-        .setLabel("PayPal link (paypal.me/...) — leave empty to clear")
+        .setLabel("PayPal link")
+        .setPlaceholder("paypal.me/yourname — leave empty to clear")
         .setStyle(TextInputStyle.Short)
         .setRequired(false)
         .setMaxLength(200)
@@ -174,7 +175,8 @@ export async function handleMoneySetPayment(interaction: ButtonInteraction): Pro
     new ActionRowBuilder<TextInputBuilder>().addComponents(
       new TextInputBuilder()
         .setCustomId("cih")
-        .setLabel("CIH RIB (Morocco) — leave empty to clear")
+        .setLabel("CIH RIB (Morocco)")
+        .setPlaceholder("Leave empty to clear")
         .setStyle(TextInputStyle.Short)
         .setRequired(false)
         .setMaxLength(200)
@@ -183,7 +185,8 @@ export async function handleMoneySetPayment(interaction: ButtonInteraction): Pro
     new ActionRowBuilder<TextInputBuilder>().addComponents(
       new TextInputBuilder()
         .setCustomId("spanish")
-        .setLabel("Spanish IBAN — leave empty to clear")
+        .setLabel("Spanish IBAN")
+        .setPlaceholder("Leave empty to clear")
         .setStyle(TextInputStyle.Short)
         .setRequired(false)
         .setMaxLength(200)
