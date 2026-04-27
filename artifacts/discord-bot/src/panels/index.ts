@@ -130,6 +130,44 @@ import {
   handleServerLogsChannelSelect,
 } from "./server-logs.js";
 import { sendStaffHelp, handleHelpButton, handleHelpSelect } from "../modules/help/index.js";
+import {
+  openMoneyPanel,
+  handleMoneySetPayment,
+  handleMoneyPaymentModal,
+  handleMoneySetLogs,
+  handleMoneyLogsChannelSelect,
+  handleMoneyAddTier,
+  handleMoneyAddTierModal,
+  handleMoneyEditTier,
+  handleMoneyEditTierSelect,
+  handleMoneyEditTierModal,
+  handleMoneyDeleteTier,
+  handleMoneyDeleteTierSelect,
+  handleMoneyAddEmbed,
+  handleMoneyAddEmbedModal,
+  handleMoneyEditEmbed,
+  handleMoneyEditEmbedSelect,
+  handleMoneyEditEmbedModal,
+  handleMoneyDeleteEmbed,
+  handleMoneyDeleteEmbedSelect,
+  handleMoneyPublish,
+  handleMoneyPublishChannelSelect,
+  handleMoneyConfirmPublish,
+  handleMoneyEditPosted,
+  handleMoneyBackToPanel,
+  handleMoneyBack,
+} from "./money.js";
+import {
+  openFeedbackPanel,
+  handleFeedbackSetStaff,
+  handleFeedbackStaffChannelSelect,
+  handleFeedbackSendEmbed,
+  handleFeedbackEmbedChannelSelect,
+  handleFeedbackConfirmSend,
+  handleFeedbackBack,
+} from "./feedback.js";
+import { startDonationDmSession } from "../modules/money/index.js";
+import { startFeedbackDmSession } from "../modules/feedback/index.js";
 
 export function buildAllCommandsEmbed(pvs = "=", mgr = "+", ctp = "-", ann = "!") {
   return new EmbedBuilder()
@@ -442,6 +480,18 @@ export async function registerPanelCommands(client: Client) {
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
     .toJSON();
 
+  const moneyCommand = new SlashCommandBuilder()
+    .setName("donate")
+    .setDescription("Configure the donation system: tiers, payment info, logs, embeds, and publish")
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
+    .toJSON();
+
+  const feedbackCommand = new SlashCommandBuilder()
+    .setName("feedback")
+    .setDescription("Configure the anonymous feedback system and send feedback embed")
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
+    .toJSON();
+
   const rest = new REST().setToken(token);
 
   const registerForGuild = async (guildId: string, guildName: string) => {
@@ -461,6 +511,8 @@ export async function registerPanelCommands(client: Client) {
           moveCommand,
           clearCommand,
           musicCommand,
+          moneyCommand,
+          feedbackCommand,
           helpCommand,
           pingCommand,
           prefixCommand,
@@ -529,6 +581,20 @@ export async function registerPanelCommands(client: Client) {
         await openClearPanel(interaction as ChatInputCommandInteraction);
       } else if (name === "music") {
         await openMusicPanel(interaction as ChatInputCommandInteraction);
+      } else if (name === "donate") {
+        if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator)) {
+          await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xff4d4d).setDescription("❌ You need **Administrator** permission to use this.")], ephemeral: true });
+          return;
+        }
+        await interaction.deferReply({ ephemeral: true });
+        await openMoneyPanel(interaction as unknown as ButtonInteraction);
+      } else if (name === "feedback") {
+        if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator)) {
+          await interaction.reply({ embeds: [new EmbedBuilder().setColor(0xff4d4d).setDescription("❌ You need **Administrator** permission to use this.")], ephemeral: true });
+          return;
+        }
+        await interaction.deferReply({ ephemeral: true });
+        await openFeedbackPanel(interaction as unknown as ButtonInteraction);
       } else if (name === "ping") {
         await interaction.reply({
           embeds: [
@@ -669,6 +735,48 @@ export async function registerPanelCommands(client: Client) {
         }
         return;
       }
+      if (interaction.customId.startsWith("mp_")) {
+        try {
+          const cid = interaction.customId;
+          if      (cid === "mp_set_payment")     await handleMoneySetPayment(interaction as ButtonInteraction);
+          else if (cid === "mp_set_logs")        await handleMoneySetLogs(interaction as ButtonInteraction);
+          else if (cid === "mp_add_tier")        await handleMoneyAddTier(interaction as ButtonInteraction);
+          else if (cid === "mp_edit_tier")       await handleMoneyEditTier(interaction as ButtonInteraction);
+          else if (cid === "mp_delete_tier")     await handleMoneyDeleteTier(interaction as ButtonInteraction);
+          else if (cid === "mp_add_embed")       await handleMoneyAddEmbed(interaction as ButtonInteraction);
+          else if (cid === "mp_edit_embed")      await handleMoneyEditEmbed(interaction as ButtonInteraction);
+          else if (cid === "mp_delete_embed")    await handleMoneyDeleteEmbed(interaction as ButtonInteraction);
+          else if (cid === "mp_publish")         await handleMoneyPublish(interaction as ButtonInteraction);
+          else if (cid === "mp_confirm_publish") await handleMoneyConfirmPublish(interaction as ButtonInteraction);
+          else if (cid === "mp_edit_posted")     await handleMoneyEditPosted(interaction as ButtonInteraction);
+          else if (cid === "mp_back_to_panel")   await handleMoneyBackToPanel(interaction as ButtonInteraction);
+          else if (cid === "mp_back")            await handleMoneyBack(interaction as ButtonInteraction);
+        } catch (err) { console.error("Donate panel button error:", err); }
+        return;
+      }
+      if (interaction.customId === "dn_donate") {
+        try { await startDonationDmSession(interaction as ButtonInteraction); } catch (err) { console.error("Donate button error:", err); }
+        return;
+      }
+      if (interaction.customId.startsWith("fb_")) {
+        try {
+          const cid = interaction.customId;
+          if (cid === "fb_set_staff") {
+            await handleFeedbackSetStaff(interaction as ButtonInteraction);
+          } else if (cid === "fb_send_embed") {
+            await handleFeedbackSendEmbed(interaction as ButtonInteraction);
+          } else if (cid === "fb_confirm_send") {
+            await handleFeedbackConfirmSend(interaction as ButtonInteraction);
+          } else if (cid === "fb_back") {
+            await handleFeedbackBack(interaction as ButtonInteraction);
+          }
+        } catch (err) { console.error("Feedback panel button error:", err); }
+        return;
+      }
+      if (interaction.customId === "feedback_open") {
+        try { await startFeedbackDmSession(interaction as ButtonInteraction); } catch (err) { console.error("Feedback open button error:", err); }
+        return;
+      }
       if (interaction.customId.startsWith("mv_")) {
         if (interaction.customId.startsWith("mv_accept:") || interaction.customId.startsWith("mv_reject:")) {
           try { await handleMoveButton(interaction as ButtonInteraction); } catch (err) { console.error("Move button error:", err); }
@@ -690,6 +798,22 @@ export async function registerPanelCommands(client: Client) {
       }
       if (interaction.customId.startsWith("am_")) {
         try { await handleAutoModStringSelect(interaction as StringSelectMenuInteraction); } catch (err) { console.error("AutoMod string select error:", err); }
+        return;
+      }
+      if (interaction.customId === "mp_edit_tier_select") {
+        try { await handleMoneyEditTierSelect(interaction as StringSelectMenuInteraction); } catch (err) { console.error("Donate edit tier select error:", err); }
+        return;
+      }
+      if (interaction.customId === "mp_delete_tier_select") {
+        try { await handleMoneyDeleteTierSelect(interaction as StringSelectMenuInteraction); } catch (err) { console.error("Donate delete tier select error:", err); }
+        return;
+      }
+      if (interaction.customId === "mp_edit_embed_select") {
+        try { await handleMoneyEditEmbedSelect(interaction as StringSelectMenuInteraction); } catch (err) { console.error("Donate edit embed select error:", err); }
+        return;
+      }
+      if (interaction.customId === "mp_delete_embed_select") {
+        try { await handleMoneyDeleteEmbedSelect(interaction as StringSelectMenuInteraction); } catch (err) { console.error("Donate delete embed select error:", err); }
         return;
       }
       if (interaction.customId === "cp_game_select") {
@@ -742,6 +866,22 @@ export async function registerPanelCommands(client: Client) {
         try { await handleMusicPlaylistChannelsSelect(interaction as ChannelSelectMenuInteraction); } catch (err) { console.error("Music playlist channels select error:", err); }
         return;
       }
+      if (interaction.customId === "mp_logs_ch") {
+        try { await handleMoneyLogsChannelSelect(interaction as ChannelSelectMenuInteraction); } catch (err) { console.error("Donate logs channel select error:", err); }
+        return;
+      }
+      if (interaction.customId === "mp_publish_ch") {
+        try { await handleMoneyPublishChannelSelect(interaction as ChannelSelectMenuInteraction); } catch (err) { console.error("Donate publish channel select error:", err); }
+        return;
+      }
+      if (interaction.customId === "fb_staff_ch") {
+        try { await handleFeedbackStaffChannelSelect(interaction as ChannelSelectMenuInteraction); } catch (err) { console.error("Feedback staff channel select error:", err); }
+        return;
+      }
+      if (interaction.customId === "fb_embed_ch") {
+        try { await handleFeedbackEmbedChannelSelect(interaction as ChannelSelectMenuInteraction); } catch (err) { console.error("Feedback embed channel select error:", err); }
+        return;
+      }
       await handleChannelSelectInteraction(interaction as ChannelSelectMenuInteraction);
       return;
     }
@@ -769,6 +909,16 @@ export async function registerPanelCommands(client: Client) {
         try { await handleWelcomeModalSubmit(interaction as ModalSubmitInteraction); } catch (err) { console.error("Welcome modal error:", err); }
       } else if (customId === "mu_add_modal") {
         try { await handleMusicAddModalSubmit(interaction as ModalSubmitInteraction); } catch (err) { console.error("Music add modal error:", err); }
+      } else if (customId === "mp_payment_modal") {
+        try { await handleMoneyPaymentModal(interaction as ModalSubmitInteraction); } catch (err) { console.error("Donate payment modal error:", err); }
+      } else if (customId === "mp_add_tier_modal") {
+        try { await handleMoneyAddTierModal(interaction as ModalSubmitInteraction); } catch (err) { console.error("Donate add tier modal error:", err); }
+      } else if (customId.startsWith("mp_edit_tier_modal:")) {
+        try { await handleMoneyEditTierModal(interaction as ModalSubmitInteraction); } catch (err) { console.error("Donate edit tier modal error:", err); }
+      } else if (customId === "mp_add_embed_modal") {
+        try { await handleMoneyAddEmbedModal(interaction as ModalSubmitInteraction); } catch (err) { console.error("Donate add embed modal error:", err); }
+      } else if (customId.startsWith("mp_edit_embed_modal:")) {
+        try { await handleMoneyEditEmbedModal(interaction as ModalSubmitInteraction); } catch (err) { console.error("Donate edit embed modal error:", err); }
       }
       return;
     }
