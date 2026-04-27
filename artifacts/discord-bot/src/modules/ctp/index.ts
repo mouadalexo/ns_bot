@@ -77,9 +77,10 @@ export function registerCTPModule(client: Client) {
             .where(eq(ctpTempVoiceCooldownsTable.guildId, guildId));
           const now = Date.now();
           const lines = tvGames.map((g) => {
+            const eff = g.cooldownSecondsOverride ?? tvCfgForChat.cooldownSeconds;
             const cd = cds.find((c) => c.roleId === g.roleId);
-            const elapsed = cd ? (now - cd.lastUsedAt.getTime()) / 1000 : tvCfgForChat.cooldownSeconds;
-            const remaining = Math.max(0, Math.ceil(tvCfgForChat.cooldownSeconds - elapsed));
+            const elapsed = cd ? (now - cd.lastUsedAt.getTime()) / 1000 : eff;
+            const remaining = Math.max(0, Math.ceil(eff - elapsed));
             return remaining > 0
               ? `\u23F3 **${g.gameName}** \u2014 ${formatSeconds(remaining)} left`
               : `\u2705 **${g.gameName}** \u2014 ready`;
@@ -167,9 +168,10 @@ export function registerCTPModule(client: Client) {
             .where(eq(ctpTempVoiceCooldownsTable.guildId, guildId));
           const now = Date.now();
           const lines = tvGames.map((g) => {
+            const eff = g.cooldownSecondsOverride ?? tvCfg.cooldownSeconds;
             const cd = cds.find((c) => c.roleId === g.roleId);
-            const elapsed = cd ? (now - cd.lastUsedAt.getTime()) / 1000 : tvCfg.cooldownSeconds;
-            const remaining = Math.max(0, Math.ceil(tvCfg.cooldownSeconds - elapsed));
+            const elapsed = cd ? (now - cd.lastUsedAt.getTime()) / 1000 : eff;
+            const remaining = Math.max(0, Math.ceil(eff - elapsed));
             return remaining > 0
               ? `\u23F3 **${g.gameName}** \u2014 ${formatSeconds(remaining)} left`
               : `\u2705 **${g.gameName}** \u2014 ready`;
@@ -346,17 +348,18 @@ export function registerCTPModule(client: Client) {
           .where(and(eq(ctpTempVoiceCooldownsTable.guildId, guildId), eq(ctpTempVoiceCooldownsTable.roleId, tvMatch.roleId)))
           .limit(1);
 
+        const effectiveCooldown = tvMatch.cooldownSecondsOverride ?? tvConfig.cooldownSeconds;
         if (cooldownRecord) {
           const elapsed = (now.getTime() - cooldownRecord.lastUsedAt.getTime()) / 1000;
-          if (elapsed < tvConfig.cooldownSeconds) {
-            const remaining = Math.ceil(tvConfig.cooldownSeconds - elapsed);
+          if (elapsed < effectiveCooldown) {
+            const remaining = Math.ceil(effectiveCooldown - elapsed);
             const notice = await message.channel.send({
               embeds: [
                 new EmbedBuilder()
                   .setColor(0x5000ff)
                   .setTitle("Cooldown Active")
                   .setDescription(`The **${tvMatch.gameName}** tag was used recently.\nYou can re-tag in **${formatSeconds(remaining)}**.`)
-                  .setFooter({ text: `Cooldown: ${formatSeconds(tvConfig.cooldownSeconds)} \u2022 Night Stars CTP` }),
+                  .setFooter({ text: `Cooldown: ${formatSeconds(effectiveCooldown)} \u2022 Night Stars CTP` }),
               ],
             });
             setTimeout(() => notice.delete().catch(() => {}), 8000);

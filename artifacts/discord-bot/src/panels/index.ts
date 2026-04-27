@@ -38,10 +38,9 @@ import {
   handleCtpPanelSelect,
   handleCtpGameSelect,
   handleCtpEditGame,
+  handleCtpEditModalSubmit,
   handleCtpRemoveGame,
   handleCtpBackToManage,
-  openCtpDetailsModal,
-  handleCtpDetailsModalSubmit,
   handleCtpPanelSave,
   handleCtpPanelReset,
 } from "./ctp.js";
@@ -168,6 +167,11 @@ import {
 } from "./feedback.js";
 import { startDonationDmSession } from "../modules/money/index.js";
 import { startFeedbackDmSession } from "../modules/feedback/index.js";
+import {
+  openFindModal,
+  handleFindModalSubmit,
+  handleFindPick,
+} from "./findHelper.js";
 
 export function buildAllCommandsEmbed(pvs = "=", mgr = "+", ctp = "-", ann = "!") {
   return new EmbedBuilder()
@@ -212,8 +216,8 @@ export function buildAllCommandsEmbed(pvs = "=", mgr = "+", ctp = "-", ann = "!"
         name: "\u2699\uFE0F Slash Commands (Admin only)",
         value: [
           "`/setup pvs` \u2014 Configure the Private Voice System",
-          "`/setup ctp-category` \u2014 Configure CTP games",
-          "`/setup ctp-onetap` \u2014 Configure CTP Onetap",
+          "`/ping-categories` \u2014 Configure Ping Categories (games with their own category)",
+          "`/ping-onetap` \u2014 Configure Ping One-Tap (temp voice game tagging)",
           "`/general setup` \u2014 Set staff role & blocked channels",
           "`/setup-jail` \u2014 Configure hammer, jail, member, and logs channel",
           "`/ann setup` \u2014 Configure announcements (roles, event colors)",
@@ -353,14 +357,14 @@ export async function registerPanelCommands(client: Client) {
     .toJSON();
 
   const ctpCategoryCommand = new SlashCommandBuilder()
-    .setName("ctp-category")
-    .setDescription("Configure CTP for games with their own category")
+    .setName("ping-categories")
+    .setDescription("Configure Ping Categories \u2014 games with their own category")
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
     .toJSON();
 
   const ctpOnetapCommand = new SlashCommandBuilder()
-    .setName("ctp-onetap")
-    .setDescription("Configure CTP Onetap \u2014 temp voice game tagging")
+    .setName("ping-onetap")
+    .setDescription("Configure Ping One-Tap \u2014 temp voice game tagging")
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
     .toJSON();
 
@@ -538,7 +542,7 @@ export async function registerPanelCommands(client: Client) {
 
     if (interaction.isChatInputCommand()) {
       const name = interaction.commandName;
-      if (name === "pvs" || name === "ctp-category" || name === "ctp-onetap") {
+      if (name === "pvs" || name === "ping-categories" || name === "ping-onetap") {
         await handleSetupCommand(interaction as ChatInputCommandInteraction);
       } else if (name === "jail") {
         await handleSetupRejectCommand(interaction as ChatInputCommandInteraction);
@@ -630,6 +634,10 @@ export async function registerPanelCommands(client: Client) {
     }
 
     if (interaction.isButton()) {
+      if (interaction.customId.startsWith("find:btn:")) {
+        try { await openFindModal(interaction as ButtonInteraction); } catch (err) { console.error("Find button error:", err); }
+        return;
+      }
       if (interaction.customId.startsWith("help_")) {
         try { await handleHelpButton(interaction as ButtonInteraction); } catch (err) { console.error("Help button error:", err); }
         return;
@@ -637,7 +645,7 @@ export async function registerPanelCommands(client: Client) {
       const panelIds = [
         "pp_save", "pp_reset",
         "cp_add_new", "cp_edit_game", "cp_remove_game", "cp_back_manage",
-        "cp_open_details", "cp_save", "cp_reset",
+        "cp_save", "cp_reset",
         "gp_save", "gp_reset", "gp_next", "gp_back",
         "pfx_edit",
         "ap_save", "ap_reset", "ap_event_color_open", "ap_color_event_title", "ap_color_event_desc", "ap_color_event_add", "ap_back",
@@ -792,6 +800,10 @@ export async function registerPanelCommands(client: Client) {
     }
 
     if (interaction.isStringSelectMenu()) {
+      if (interaction.customId.startsWith("find:pick:")) {
+        try { await handleFindPick(interaction as StringSelectMenuInteraction); } catch (err) { console.error("Find pick error:", err); }
+        return;
+      }
       if (interaction.customId.startsWith("help_") && interaction.customId.endsWith("_select")) {
         try { await handleHelpSelect(interaction as StringSelectMenuInteraction); } catch (err) { console.error("Help select error:", err); }
         return;
@@ -888,14 +900,19 @@ export async function registerPanelCommands(client: Client) {
 
     if (interaction.isModalSubmit()) {
       const { customId } = interaction;
+      if (customId.startsWith("find:mod:")) {
+        try { await handleFindModalSubmit(interaction as ModalSubmitInteraction); } catch (err) { console.error("Find modal error:", err); }
+        return;
+      }
       if (customId.startsWith("am_")) {
         try { await handleAutoModModal(interaction as ModalSubmitInteraction); } catch (err) { console.error("AutoMod modal error:", err); }
         return;
       }
       if (customId === "pfx_modal") {
         await handlePrefixModalSubmit(interaction as ModalSubmitInteraction);
-      } else if (customId.startsWith("cp_") || customId.startsWith("ct_")) {
-        try { await handleCtpDetailsModalSubmit(interaction as ModalSubmitInteraction); } catch (err) { console.error("CTP modal error:", err); }
+      } else if (customId.startsWith("cp_")) {
+        try { await handleCtpEditModalSubmit(interaction as ModalSubmitInteraction); } catch (err) { console.error("CTP modal error:", err); }
+      } else if (customId.startsWith("ct_")) {
         try { await handleCtpTagModalSubmit(interaction as ModalSubmitInteraction); } catch (err) { console.error("CTP tag modal error:", err); }
       } else if (customId === "ap_modal_event_title") {
         await handleAnnColorModalSubmit(interaction as ModalSubmitInteraction, "event_title");
@@ -949,9 +966,9 @@ async function handleSetupCommand(interaction: ChatInputCommandInteraction) {
   const name = interaction.commandName;
   if (name === "pvs") {
     await openPvsPanel(interaction as unknown as ButtonInteraction);
-  } else if (name === "ctp-category") {
+  } else if (name === "ping-categories") {
     await openCtpManagePanel(interaction as unknown as ButtonInteraction);
-  } else if (name === "ctp-onetap") {
+  } else if (name === "ping-onetap") {
     await openCtpTagPanel(interaction as unknown as ButtonInteraction);
   }
 }
@@ -1045,8 +1062,6 @@ async function handleButtonInteraction(interaction: ButtonInteraction) {
       await openCtpTagPanel(interaction);
     } else if (customId.startsWith("ct_")) {
       await handleCtpTagButton(interaction);
-    } else if (customId === "cp_open_details") {
-      await openCtpDetailsModal(interaction);
     } else if (customId === "cp_save") {
       await handleCtpPanelSave(interaction);
     } else if (customId === "cp_reset") {

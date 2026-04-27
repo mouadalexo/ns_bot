@@ -25,10 +25,13 @@ import {
 import { eq, and } from "drizzle-orm";
 
 interface CtpTagState {
-  mode?: "set_category" | "add_game" | "remove_game" | "set_chats" | null;
+  mode?: "set_category" | "add_game" | "remove_game" | "edit_game" | "set_chats" | null;
+  editRoleId?: string | null;
 }
 
 export const ctpTagState = new Map<string, CtpTagState>();
+
+const DEFAULT_COOLDOWN = 600;
 
 function parseCooldown(input: string): number {
   const s = input.trim().toLowerCase().replace(/\s+/g, "");
@@ -44,7 +47,7 @@ function parseCooldown(input: string): number {
   if (mOnly) return parseInt(mOnly[1]) * 60;
   const plain = parseInt(s);
   if (!isNaN(plain) && plain > 0) return plain * 60;
-  return 300;
+  return DEFAULT_COOLDOWN;
 }
 
 function formatSeconds(total: number): string {
@@ -87,9 +90,13 @@ type Games = Awaited<ReturnType<typeof getGames>>;
 function buildEmbed(cfg: Config, games: Games, _state: CtpTagState): EmbedBuilder {
   const enabled = !!(cfg?.enabled ?? 1);
   const chats = parseGamingChats(cfg);
+  const defaultCooldown = cfg?.cooldownSeconds ?? DEFAULT_COOLDOWN;
   return new EmbedBuilder()
     .setColor(0x5000ff)
-    .setTitle("🎲 CTP — One-Tap Tags")
+    .setTitle("🎲 Ping One-Tap")
+    .setDescription(
+      "One category for all temp-voice games. Add a game by selecting its role — the game name is taken from the role automatically and the cooldown defaults to **10m**. Use **Edit Game** to rename or set a per-game cooldown."
+    )
     .addFields(
       {
         name: "Category",
@@ -97,8 +104,8 @@ function buildEmbed(cfg: Config, games: Games, _state: CtpTagState): EmbedBuilde
         inline: true,
       },
       {
-        name: "Cooldown",
-        value: formatSeconds(cfg?.cooldownSeconds ?? 300),
+        name: "Default Cooldown",
+        value: formatSeconds(defaultCooldown),
         inline: true,
       },
       {
@@ -107,21 +114,27 @@ function buildEmbed(cfg: Config, games: Games, _state: CtpTagState): EmbedBuilde
         inline: true,
       },
       {
-        name: "Gaming Chats",
+        name: "Gaming Chat (optional)",
         value: chats.length
           ? chats.map((id) => `<#${id}>`).join(", ")
-          : "_none — tag only works inside the One-Tap voices_",
+          : "_none — players can still ping inside the One-Tap voices_",
         inline: false,
       },
       {
         name: "Games",
         value: games.length
-          ? games.map((g) => `<@&${g.roleId}> — ${g.gameName}`).join("\n")
+          ? games
+              .map((g) => {
+                const cd = g.cooldownSecondsOverride ?? defaultCooldown;
+                const tag = g.cooldownSecondsOverride != null ? ` *(custom)*` : "";
+                return `<@&${g.roleId}> — **${g.gameName}** • ${formatSeconds(cd)}${tag}`;
+              })
+              .join("\n")
           : "_none configured_",
         inline: false,
       }
     )
-    .setFooter({ text: "Night Stars • CTP One-Tap Tags" });
+    .setFooter({ text: "Night Stars • Ping One-Tap" });
 }
 
 function buildComponents(cfg: Config, games: Games, state: CtpTagState) {
@@ -137,11 +150,11 @@ function buildComponents(cfg: Config, games: Games, state: CtpTagState) {
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId("ct_set_cooldown")
-        .setLabel("Set Cooldown")
+        .setLabel("Default Cooldown")
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId("ct_set_chats")
-        .setLabel("Gaming Chats")
+        .setLabel("Gaming Chat")
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId("ct_toggle")
@@ -153,6 +166,11 @@ function buildComponents(cfg: Config, games: Games, state: CtpTagState) {
         .setCustomId("ct_add_game")
         .setLabel("Add Game")
         .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId("ct_edit_game")
+        .setLabel("Edit Game")
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(games.length === 0),
       new ButtonBuilder()
         .setCustomId("ct_remove_game")
         .setLabel("Remove Game")
@@ -188,7 +206,16 @@ function buildComponents(cfg: Config, games: Games, state: CtpTagState) {
       new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(
         new RoleSelectMenuBuilder()
           .setCustomId("ct_game_role")
-          .setPlaceholder("Select game role to add")
+          .setPlaceholder("Select game role to add (name = role name, cooldown = 10m)")
+      )
+    );
+  } else if (state.mode === "edit_game" && games.length > 0) {
+    rows.push(
+      new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId("ct_edit_select")
+          .setPlaceholder("Select game to edit")
+          .addOptions(games.slice(0, 25).map((g) => ({ label: g.gameName, value: g.roleId })))
       )
     );
   } else if (state.mode === "remove_game" && games.length > 0) {
@@ -197,7 +224,7 @@ function buildComponents(cfg: Config, games: Games, state: CtpTagState) {
         new StringSelectMenuBuilder()
           .setCustomId("ct_remove_select")
           .setPlaceholder("Select game to remove")
-          .addOptions(games.map((g) => ({ label: g.gameName, value: g.roleId })))
+          .addOptions(games.slice(0, 25).map((g) => ({ label: g.gameName, value: g.roleId })))
       )
     );
   }
@@ -250,15 +277,16 @@ export async function handleCtpTagButton(interaction: ButtonInteraction) {
   if (interaction.customId === "ct_set_cooldown") {
     const modal = new ModalBuilder()
       .setCustomId("ct_cooldown_modal")
-      .setTitle("Set One-Tap Cooldown");
+      .setTitle("Default One-Tap Cooldown");
     modal.addComponents(
       new ActionRowBuilder<TextInputBuilder>().addComponents(
         new TextInputBuilder()
           .setCustomId("ct_cooldown_input")
-          .setLabel("Cooldown (e.g. 5m, 30s, 2m30s)")
+          .setLabel("Cooldown (e.g. 10m, 30s, 2m30s)")
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
           .setMaxLength(10)
+          .setValue("10m")
       )
     );
     await interaction.showModal(modal);
@@ -272,7 +300,7 @@ export async function handleCtpTagButton(interaction: ButtonInteraction) {
     if (cfg) {
       await db.update(ctpTempVoiceConfigTable).set({ enabled: newEnabled }).where(eq(ctpTempVoiceConfigTable.guildId, guildId));
     } else {
-      await db.insert(ctpTempVoiceConfigTable).values({ guildId, enabled: newEnabled, cooldownSeconds: 300 });
+      await db.insert(ctpTempVoiceConfigTable).values({ guildId, enabled: newEnabled, cooldownSeconds: DEFAULT_COOLDOWN });
     }
     const freshCfg = await getConfig(guildId);
     const games = await getGames(guildId);
@@ -284,6 +312,15 @@ export async function handleCtpTagButton(interaction: ButtonInteraction) {
 
   if (interaction.customId === "ct_add_game") {
     state.mode = "add_game";
+    ctpTagState.set(userId, state);
+    const cfg = await getConfig(guildId);
+    const games = await getGames(guildId);
+    await interaction.update({ embeds: [buildEmbed(cfg, games, state)], components: buildComponents(cfg, games, state) });
+    return;
+  }
+
+  if (interaction.customId === "ct_edit_game") {
+    state.mode = "edit_game";
     ctpTagState.set(userId, state);
     const cfg = await getConfig(guildId);
     const games = await getGames(guildId);
@@ -326,7 +363,7 @@ export async function handleCtpTagChannelSelect(interaction: ChannelSelectMenuIn
     } else {
       await db
         .insert(ctpTempVoiceConfigTable)
-        .values({ guildId, cooldownSeconds: 300, enabled: 1, gamingChatChannelIdsJson: JSON.stringify(ids) });
+        .values({ guildId, cooldownSeconds: DEFAULT_COOLDOWN, enabled: 1, gamingChatChannelIdsJson: JSON.stringify(ids) });
     }
     const freshCfg = await getConfig(guildId);
     const games = await getGames(guildId);
@@ -343,7 +380,7 @@ export async function handleCtpTagChannelSelect(interaction: ChannelSelectMenuIn
   if (cfg) {
     await db.update(ctpTempVoiceConfigTable).set({ categoryId }).where(eq(ctpTempVoiceConfigTable.guildId, guildId));
   } else {
-    await db.insert(ctpTempVoiceConfigTable).values({ guildId, categoryId, cooldownSeconds: 300, enabled: 1 });
+    await db.insert(ctpTempVoiceConfigTable).values({ guildId, categoryId, cooldownSeconds: DEFAULT_COOLDOWN, enabled: 1 });
   }
 
   const freshCfg = await getConfig(guildId);
@@ -381,6 +418,51 @@ export async function handleCtpTagStringSelect(interaction: StringSelectMenuInte
   const userId = interaction.user.id;
   const state = ctpTagState.get(userId) ?? {};
   const roleId = interaction.values[0];
+
+  if (interaction.customId === "ct_edit_select") {
+    const [game] = await db
+      .select()
+      .from(ctpTempVoiceGamesTable)
+      .where(and(eq(ctpTempVoiceGamesTable.guildId, guildId), eq(ctpTempVoiceGamesTable.roleId, roleId)))
+      .limit(1);
+    if (!game) return;
+
+    state.editRoleId = roleId;
+    ctpTagState.set(userId, state);
+
+    const cfg = await getConfig(guildId);
+    const fallbackCd = cfg?.cooldownSeconds ?? DEFAULT_COOLDOWN;
+    const cdValue = formatSeconds(game.cooldownSecondsOverride ?? fallbackCd);
+
+    const modal = new ModalBuilder()
+      .setCustomId("ct_edit_modal")
+      .setTitle(`Edit ${game.gameName}`);
+    modal.addComponents(
+      new ActionRowBuilder<TextInputBuilder>().addComponents(
+        new TextInputBuilder()
+          .setCustomId("ct_edit_name")
+          .setLabel("Game Name")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setMaxLength(50)
+          .setValue(game.gameName)
+      ),
+      new ActionRowBuilder<TextInputBuilder>().addComponents(
+        new TextInputBuilder()
+          .setCustomId("ct_edit_cooldown")
+          .setLabel("Cooldown (blank = use default)")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false)
+          .setMaxLength(10)
+          .setValue(game.cooldownSecondsOverride != null ? cdValue : "")
+      ),
+    );
+
+    await interaction.showModal(modal);
+    return;
+  }
+
+  // ct_remove_select
   state.mode = null;
   ctpTagState.set(userId, state);
 
@@ -396,6 +478,29 @@ export async function handleCtpTagModalSubmit(interaction: ModalSubmitInteractio
   const guildId = interaction.guild!.id;
   const userId = interaction.user.id;
   const state = ctpTagState.get(userId) ?? {};
+
+  if (interaction.customId === "ct_edit_modal") {
+    const editRoleId = state.editRoleId;
+    if (!editRoleId) return;
+    const newName = interaction.fields.getTextInputValue("ct_edit_name").trim();
+    const cdRaw = interaction.fields.getTextInputValue("ct_edit_cooldown").trim();
+    const override = cdRaw ? parseCooldown(cdRaw) : null;
+
+    await db.update(ctpTempVoiceGamesTable)
+      .set({ gameName: newName, cooldownSecondsOverride: override })
+      .where(and(eq(ctpTempVoiceGamesTable.guildId, guildId), eq(ctpTempVoiceGamesTable.roleId, editRoleId)));
+
+    state.mode = null;
+    state.editRoleId = null;
+    ctpTagState.set(userId, state);
+
+    const cfg = await getConfig(guildId);
+    const games = await getGames(guildId);
+    await interaction.update({ embeds: [buildEmbed(cfg, games, state)], components: buildComponents(cfg, games, state) });
+    return;
+  }
+
+  // ct_cooldown_modal — default cooldown
   const cooldownSeconds = parseCooldown(interaction.fields.getTextInputValue("ct_cooldown_input"));
   state.mode = null;
   ctpTagState.set(userId, state);
