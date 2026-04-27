@@ -25,6 +25,8 @@ import { registerWelcomeModule } from "./modules/welcome/index.js";
 import { registerMasterSetupModule } from "./modules/master-setup/index.js";
 import { registerSocialModule, ensureSocialSchema } from "./modules/social/index.js";
 import { registerMusicModule, ensureMusicSchema } from "./modules/music/index.js";
+import { registerMoneyModule, ensureMoneySchema } from "./modules/money/index.js";
+import { registerFeedbackModule, ensureFeedbackSchema } from "./modules/feedback/index.js";
 import { registerPanelCommands } from "./panels/index.js";
 
 const BOT_INSTANCE_LOCK_KEY = 781034562;
@@ -32,20 +34,34 @@ let lockClient: Awaited<ReturnType<typeof pool.connect>> | undefined;
 let lockKeepaliveTimer: NodeJS.Timeout | undefined;
 
 async function ensureRuntimeSchema(): Promise<void> {
+  // bot_config + ctp_temp_voice_config are owned by @workspace/db (Drizzle).
+  // Run `pnpm --filter @workspace/db push` to create/sync them.
+  // The ALTERs below are kept as a safety net for older deployments missing columns.
   await pool.query(`
-    alter table bot_config add column if not exists member_role_id text;
-    alter table bot_config add column if not exists jail_hammer_role_id text;
-    alter table bot_config add column if not exists jail_hammer_role_ids_json text;
-    alter table bot_config add column if not exists jail_logs_channel_id text;
-    alter table bot_config add column if not exists move_role_ids_json text;
-    alter table bot_config add column if not exists move_request_role_ids_json text;
-    alter table bot_config add column if not exists clear_role_ids_json text;
-    alter table bot_config add column if not exists welcome_config_json text;
+    do $$
+    begin
+      alter table bot_config add column if not exists member_role_id text;
+      alter table bot_config add column if not exists jail_hammer_role_id text;
+      alter table bot_config add column if not exists jail_hammer_role_ids_json text;
+      alter table bot_config add column if not exists jail_logs_channel_id text;
+      alter table bot_config add column if not exists move_role_ids_json text;
+      alter table bot_config add column if not exists move_request_role_ids_json text;
+      alter table bot_config add column if not exists clear_role_ids_json text;
+      alter table bot_config add column if not exists welcome_config_json text;
+      alter table bot_config add column if not exists pvs_prefix text;
+    exception when undefined_table then
+      null;
+    end $$;
   `);
 
   await pool.query(`
-    alter table ctp_temp_voice_config
-      add column if not exists gaming_chat_channel_ids_json text default '[]';
+    do $$
+    begin
+      alter table ctp_temp_voice_config
+        add column if not exists gaming_chat_channel_ids_json text default '[]';
+    exception when undefined_table then
+      null;
+    end $$;
   `);
 
   await pool.query(`
@@ -217,6 +233,8 @@ async function startBot(token: string): Promise<void> {
   await ensureSocialSchema();
   await ensureServerLogsSchema();
   await ensureMusicSchema();
+  await ensureMoneySchema();
+  await ensureFeedbackSchema();
 
   const client = new Client({
     intents: [
@@ -307,5 +325,7 @@ async function startBot(token: string): Promise<void> {
     registerMasterSetupModule(client);
     registerSocialModule(client);
     registerMusicModule(client);
+    registerMoneyModule(client);
+    registerFeedbackModule(client);
   });
 }
