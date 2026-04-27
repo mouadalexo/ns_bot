@@ -479,7 +479,7 @@ const PLAYLIST_PATTERNS: Array<{ name: string; re: RegExp }> = [
   { name: "Apple Music",   re: /(?:music|itunes)\.apple\.com\/[a-z-]+\/playlist\/[^/]+\/pl\.[A-Za-z0-9]+/i },
   { name: "YouTube",       re: /(?:youtube\.com|youtu\.be|music\.youtube\.com)\/.*[?&]list=[A-Za-z0-9_-]+/i },
   { name: "SoundCloud",    re: /soundcloud\.com\/[^/]+\/sets\/[^/?#]+/i },
-  { name: "Deezer",        re: /deezer\.com\/(?:[a-z]{2}\/)?playlist\/\d+/i },
+  { name: "Deezer",        re: /(?:deezer\.com\/(?:[a-z]{2}\/)?playlist\/\d+|link\.deezer\.com\/s\/[A-Za-z0-9]+|deezer\.page\.link\/[A-Za-z0-9]+)/i },
   { name: "TIDAL",         re: /tidal\.com\/(?:browse\/)?playlist\/[A-Za-z0-9-]+/i },
   { name: "Amazon Music",  re: /(?:music\.amazon|amazon\.com\/music)\/playlists\/[A-Za-z0-9]+/i },
 ];
